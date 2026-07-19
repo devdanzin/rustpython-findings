@@ -98,3 +98,16 @@ Takeaway: the campaign has converged. New panic sites are now rare (1 in 209 dir
 fleets); the remaining yield is the segfault classes (0007a recursion, 0008 uninitialized objects)
 and the un-minted huge-alloc-abort robustness class. The `--new-uninit` / `--concurrency-stress`
 variant fleets target the segfault/threading surface the primary mode under-exercises.
+
+## fusil-rustpython_07 (memory-balloon class isolated)
+
+**New: RUSTPY-0012** — `_suggestions._generate_suggestions` eager-collects any iterable into a `Vec`
+(CPython requires a `list`: `TypeError: candidates must be a list`), so an **infinite iterable**
+(`itertools.count()`, or an object with a non-terminating `__getitem__` and no `__iter__`) balloons
+memory unboundedly (~1 GiB/s, measured 5.5 GiB in 5 s) until an OOM abort — **no concurrency needed**,
+a single direct call does it. This is a **distinct memory class**: not the recursion→stack-overflow
+(0007a), not a single huge allocation, and not the runaway-abandoned-thread balloon (fixed by fusil
+`--child-memory-limit-mb`). It surfaces as `rustpySEGV` / `memory allocation of N bytes failed` (no
+panic line). Root: `candidates: Vec<PyObjectRef>` (`suggestions.rs:11`) — the `: Vec<PyObjectRef>`
+eager-collect-untrusted-iterable pattern recurs at ~60 sites and is worth an audit. Fix = take
+`PyListRef` (CPython parity + bounded).
