@@ -24,6 +24,10 @@ RustPython `0.5.0` (reports `Python 3.14.0alpha`, `sys.implementation.name == 'r
 - **`catalog/known_panics.tsv`** — flat dedupe snapshot (`<bug_id>\t<signature>`) generated from the
   `meta.json` files; consumed by fusil's in-loop deduper.
 - **`scripts/gen_known_panics.py`** — regenerates the catalog from `reports/*/meta.json`.
+- **`tools/unwrap_scan/`** — a `syn`-based static scanner over the RustPython source that lists the
+  native (Rust-implemented) modules (`rust_modules.txt`, for `fusil --modules-file`) and the
+  Python-reachable panic surface (`risky_sites.tsv`: `.unwrap()`/`.expect()`/`panic!`/index sites
+  attributed to their function/method and reachability). See `tools/unwrap_scan/README.md`.
 
 ## Dedup catalog (in-loop, for fleets)
 
