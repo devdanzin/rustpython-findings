@@ -3,7 +3,7 @@
 The maintainers ([#8325](https://github.com/RustPython/RustPython/issues/8325)) asked whether these
 findings are "a duplication of CPython unittests" — i.e. if you ran CPython's `Lib/test/` suite under
 RustPython, would it already surface them? Checked each against CPython `main`'s test suite + verified
-RustPython's actual behavior. Answer: **2 of 8 are directly covered by a CPython test; the other 6 exercise
+RustPython's actual behavior. Answer: **2 of 9 are directly covered by a CPython test; the other 7 exercise
 inputs/behaviors the suite doesn't** — including one where RustPython *passes* the relevant CPython tests.
 
 | finding | CPython does | CPython test that exercises it | covered? |
@@ -21,7 +21,7 @@ inputs/behaviors the suite doesn't** — including one where RustPython *passes*
 ## Takeaways for the maintainers
 
 - **Only 2 of 9 (RUSTPY-0008, RUSTPY-0004) would be caught by running CPython's test suite as-is.** The
-  other 6 are inputs the suite doesn't exercise — wrong-arity/uninitialized-object construction, internal
+  other 7 are inputs the suite doesn't exercise — wrong-arity/uninitialized-object construction, internal
   functions called directly, surrogate *source*, thread-teardown re-entrancy, a RustPython-internal
   type-init bug, and recursion object-graphs that slip past the guards RustPython already has.
 - **RUSTPY-0007a is the interesting one:** RustPython *passes* CPython's recursion tests (its guards work
