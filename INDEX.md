@@ -16,6 +16,7 @@ Dedup key = panic site (`file.rs:line`).
 | **RUSTPY-0006** | `stdlib/builtins.rs:557/607` `PyStr contains surrogates` | `eval(chr(0xd800))` | 2 | `compile()`/`eval()` call `source.expect_str()`, which **panics** on a string containing lone surrogates. CPython raises `ValueError`/compiles. **Rare** (the panic prints mid-run). |
 | **RUSTPY-0009** | `builtins/staticmethod.rs:182` `unwrap()` on `Err` | `repro.py` — `repr(staticmethod(obj))` where `obj.__repr__` raises | 1 | `staticmethod.__repr__` calls the wrapped object's `repr()` and **`.unwrap()`s it** — a raising `__repr__` panics instead of propagating. CPython raises the inner exception. (fleet_02) |
 | **RUSTPY-0010** | `stdlib/src/binascii.rs:507` `index out of bounds` | `import binascii; binascii.b2a_qp(b'\n')` | 1 | `b2a_qp`'s newline-scan loop leaves `in_idx == 0` when the first byte is `\n`, then `buf[in_idx - 1]` underflows to `usize::MAX` (OOB). Guard needs `in_idx > 0`. CPython returns `b'\n'`. Also via `quopri.encodestring`. (fleet_03) |
+| **RUSTPY-0011** | `builtins/classmethod.rs:198` `unwrap()` on `Err` | `repro.py` — `repr(classmethod(obj))` where `obj.__repr__` raises | 1 | **Exact sibling of RUSTPY-0009**, one type over: `classmethod.__repr__` does `.repr(vm).unwrap()` — a raising `__repr__` panics instead of propagating. CPython raises the inner exception. Report both as one `.repr(vm).unwrap()` fix. (fleet_05) |
 
 ## Segfaults (memory-unsafety — one class, ≥3 sub-causes)
 
@@ -76,3 +77,24 @@ artifacts: `pty.open_terminal`, GC-teardown on email/json/encodings — no disti
 Takeaways: the dedup catalog + `--modules-file` targeting from the new tooling would collapse this
 to "RUSTPY-0010 + huge-alloc-abort class" instead of 93 raw dirs. The structseq (0002) and
 static-type (0003) bugs are confirmed to span many more modules than the original repro suggested.
+
+## fusil-rustpython_05 + _06 (fleets 4–5, WITH dedup catalog + --modules-file)
+
+First fleets run with the new tooling (in-loop dedup + native-module targeting). Dedup collapsed
+them hard: **fleet_05 (85 dirs) = 1 NEW panic (RUSTPY-0011, classmethod repr), rest known;
+fleet_06 (124 dirs) = 0 new panics** (every panic was RUSTPY-0001..0005). Known-panic mix (both
+fleets): structseq 0002, static-type 0003 (hash modules), csv 0004 (`:748`+`:805`), _thread 0001,
+_typing 0005. Segfaults: re.Match 0008 (4+10), recursion 0007a SIGSEGV (2+7).
+
+**Memory-balloon signal:** 14 (_05) + 24 (_06) = **38 `sigterm` dirs** — RustPython ballooning
+~400 MiB/s to 15+ GiB on hostile input (a runaway thread's fuzzed call allocating unboundedly,
+abandoned by the generated `join(timeout=1)`), killed by the cgroup cap or a peer `killall`.
+**Fixed** by fusil `--child-memory-limit-mb 2048` (PR #228, merged): a real `RLIMIT_AS` makes the
+child abort at ~1.15 GiB in ~6 s (`memory allocation of N bytes failed`) instead of swap-filling.
+A few genuine `huge-alloc abort` dirs (a single op computing a giant size where CPython raises
+`MemoryError`) hide in that class — not yet minted.
+
+Takeaway: the campaign has converged. New panic sites are now rare (1 in 209 dirs across both
+fleets); the remaining yield is the segfault classes (0007a recursion, 0008 uninitialized objects)
+and the un-minted huge-alloc-abort robustness class. The `--new-uninit` / `--concurrency-stress`
+variant fleets target the segfault/threading surface the primary mode under-exercises.

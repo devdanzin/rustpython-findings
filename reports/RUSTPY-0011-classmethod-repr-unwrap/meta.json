@@ -1,0 +1,17 @@
+{
+  "id": "RUSTPY-0011",
+  "slug": "classmethod-repr-unwrap",
+  "title": "RUSTPY-0011 — repr(classmethod(obj)) panics when the wrapped object's __repr__ raises (`classmethod.rs:198`)",
+  "kind": "panic",
+  "signatures": [
+    "crates/vm/src/builtins/classmethod.rs:198"
+  ],
+  "one_line_repro": "see repro.py -- repr(classmethod(obj)) where obj.__repr__ raises",
+  "repro": "repro.py",
+  "vehicles": 1,
+  "prior_art": "unreported (classmethod sibling of RUSTPY-0009)",
+  "status": "confirmed",
+  "found_in": "fusil-rustpython_05",
+  "confirmed_build": "rustpython 0.5.0 (~/.cargo/bin/rustpython)",
+  "notes": "Exact sibling of RUSTPY-0009 (staticmethod.rs:182): Representable::repr_str does zelf.callable.lock().repr(vm).unwrap() -- a raising __repr__ panics instead of propagating. CPython raises ValueError. Deterministic 5/5. Fix = ? not .unwrap(); report together with 0009 as one .repr(vm).unwrap() sweep."
+}
