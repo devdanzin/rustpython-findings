@@ -36,3 +36,10 @@ and `_md5.md5()` are one-liners. The segfaults (esp. the recursion → stack-ove
 serious since they're memory-unsafety, not a clean panic. Fixes are uniformly "bounds/arity-check and
 return a Python error instead of `unwrap()`/`panic!`/indexing", plus a recursion guard on the hash/compare
 native paths.
+
+## Prior art (vs the RustPython tracker)
+
+Checked each finding against RustPython/RustPython issues+PRs — see `notes/prior-art-rustpython-tracker.md`.
+Summary: **RUSTPY-0003 = #5210** (open) and **RUSTPY-0007a = #2796** (open umbrella) are already tracked;
+**RUSTPY-0001** is a distinct, unfixed member of the #7813/#7965 thread-teardown family; **RUSTPY-0004**
+(csv) sits in an active-rework area (#8310); **RUSTPY-0002 / 0005 / 0006 / 0008 appear unreported**.
