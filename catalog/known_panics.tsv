@@ -1,0 +1,11 @@
+# bug_id	signature
+RUSTPY-0001	crates/vm/src/stdlib/_thread.rs:977
+RUSTPY-0002	crates/vm/src/types/structseq.rs:311
+RUSTPY-0003	crates/vm/src/class.rs:87
+RUSTPY-0004	crates/stdlib/src/csv.rs:1070
+RUSTPY-0004	crates/stdlib/src/csv.rs:748
+RUSTPY-0004	crates/stdlib/src/csv.rs:805
+RUSTPY-0005	crates/vm/src/stdlib/_typing.rs:43
+RUSTPY-0006	crates/vm/src/stdlib/builtins.rs:557
+RUSTPY-0006	crates/vm/src/stdlib/builtins.rs:607
+RUSTPY-0009	crates/vm/src/builtins/staticmethod.rs:182

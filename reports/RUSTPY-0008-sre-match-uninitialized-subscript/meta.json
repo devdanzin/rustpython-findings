@@ -1,0 +1,15 @@
+{
+  "id": "RUSTPY-0008",
+  "slug": "sre-match-uninitialized-subscript",
+  "title": "RUSTPY-0008 \u2014 segfault: subscripting an uninitialized `re.Match` (`_sre` `Match::as_mapping`)",
+  "kind": "segv",
+  "signatures": [],
+  "one_line_repro": "import re; M=type(re.match('a','a')); M.__new__(M)[0]",
+  "repro": "repro.py",
+  "vehicles": 6,
+  "prior_art": "unreported",
+  "status": "confirmed",
+  "found_in": "fusil-rustpython_01",
+  "confirmed_build": "rustpython 0.5.0 (~/.cargo/bin/rustpython)",
+  "notes": "Subscripting an uninitialized re.Match (built via __new__) reads garbage regs/string; the AsMapping subscript path lacks the init guard group()/repr have. SIGSEGV 6/6, deterministic. Reproduced from fusil --new-uninit alone (the mode's protocol-slot hammer on T.__new__(T)). No panic line -> rustpySEGV bucket (gdb resolves to _sre Match::as_mapping)."
+}

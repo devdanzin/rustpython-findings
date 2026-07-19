@@ -1,0 +1,17 @@
+{
+  "id": "RUSTPY-0002",
+  "slug": "structseq-field-getter-oob",
+  "title": "RUSTPY-0002 \u2014 struct-sequence field getter panics with `index out of bounds` (`structseq.rs:311`)",
+  "kind": "panic",
+  "signatures": [
+    "crates/vm/src/types/structseq.rs:311"
+  ],
+  "one_line_repro": "import pwd; pwd.struct_passwd().pw_name",
+  "repro": "repro.py",
+  "vehicles": 24,
+  "prior_art": "unreported",
+  "status": "confirmed",
+  "found_in": "fusil-rustpython_01",
+  "confirmed_build": "rustpython 0.5.0 (~/.cargo/bin/rustpython)",
+  "notes": "Dominant. A struct-sequence built with fewer elements than its named fields; the field getter does zelf[i] with no bounds check. CPython raises TypeError at construction. NOTE: a second construction-path face (crates/vm/src/types/structseq.rs:149, via T.__new__(T) under fusil --new-uninit) was seen 2026-07-19; not yet triaged as a distinct finding, so it is intentionally left OUT of signatures (lets a fleet resurface it as rustpyNEW)."
+}

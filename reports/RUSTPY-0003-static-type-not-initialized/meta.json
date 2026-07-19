@@ -1,0 +1,17 @@
+{
+  "id": "RUSTPY-0003",
+  "slug": "static-type-not-initialized",
+  "title": "RUSTPY-0003 \u2014 `static type has not been initialized` panic (`class.rs:87`)",
+  "kind": "panic",
+  "signatures": [
+    "crates/vm/src/class.rs:87"
+  ],
+  "one_line_repro": "import _md5; _md5.md5()",
+  "repro": "repro.py",
+  "vehicles": 15,
+  "prior_art": "KNOWN-open #5210 (static type cross-module init)",
+  "status": "confirmed",
+  "found_in": "fusil-rustpython_01",
+  "confirmed_build": "rustpython 0.5.0 (~/.cargo/bin/rustpython)",
+  "notes": "A native type used before its static cell is initialised; unwrap_or_else(fail) panics instead of raising."
+}

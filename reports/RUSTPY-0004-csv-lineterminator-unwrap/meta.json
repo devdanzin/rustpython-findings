@@ -1,0 +1,19 @@
+{
+  "id": "RUSTPY-0004",
+  "slug": "csv-lineterminator-unwrap",
+  "title": "RUSTPY-0004 \u2014 `csv` `get_lineterminator` unwraps `None` (`csv.rs:805`)",
+  "kind": "panic",
+  "signatures": [
+    "crates/stdlib/src/csv.rs:805",
+    "crates/stdlib/src/csv.rs:748",
+    "crates/stdlib/src/csv.rs:1070"
+  ],
+  "one_line_repro": "import _csv; _csv.reader([]).__next__()",
+  "repro": "repro.py",
+  "vehicles": 7,
+  "prior_art": "active-rework area (#8310 RFC / #8324)",
+  "status": "confirmed",
+  "found_in": "fusil-rustpython_01",
+  "confirmed_build": "rustpython 0.5.0 (~/.cargo/bin/rustpython)",
+  "notes": "get_lineterminator unwraps a dialect lookup that returns None. Faces: csv.rs:805 (reader), csv.rs:748 (_csv.writer(io.StringIO()) excel-dialect unwrap), csv.rs:1070."
+}

@@ -1,0 +1,15 @@
+{
+  "id": "RUSTPY-0007",
+  "slug": "segfault-class",
+  "title": "RUSTPY-0007 \u2014 segfault class (memory-unsafety): recursion\u2192stack-overflow, `_sre` Match mapping, object-core",
+  "kind": "segv",
+  "signatures": [],
+  "one_line_repro": "see report (recursion object-graphs; hash/compare/genericalias native paths)",
+  "repro": null,
+  "vehicles": 14,
+  "prior_art": "KNOWN-open umbrella #2796 (+ #1374): recursion -> native stack overflow",
+  "status": "confirmed",
+  "found_in": "fusil-rustpython_01",
+  "confirmed_build": "rustpython 0.5.0 (~/.cargo/bin/rustpython)",
+  "notes": "Memory-unsafety segfault class (~9 SIGSEGV + 5 SIGABRT in fleet_01; 42 SIGABRT + 22 SIGSEGV in fleet_02). Dominant sub-cause = unbounded native recursion hashing/comparing a deep object (CPython raises RecursionError). RustPython PASSES the standard recursion tests; the triggers are fusil's specific object graphs. No panic signature -> rustpySEGV bucket."
+}

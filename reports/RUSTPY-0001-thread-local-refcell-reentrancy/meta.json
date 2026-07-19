@@ -1,0 +1,17 @@
+{
+  "id": "RUSTPY-0001",
+  "slug": "thread-local-refcell-reentrancy",
+  "title": "RUSTPY-0001 \u2014 `RefCell already borrowed` in thread-local cleanup (`_thread.rs:977`)",
+  "kind": "panic",
+  "signatures": [
+    "crates/vm/src/stdlib/_thread.rs:977"
+  ],
+  "one_line_repro": "see repro.py (global _local + a stored value whose __del__ re-enters _local)",
+  "repro": "repro.py",
+  "vehicles": 48,
+  "prior_art": "distinct, unfixed member of the #7813 / #7965 thread-teardown family (#7965 fixed a different push_thread_frame panic already in our build)",
+  "status": "confirmed",
+  "found_in": "fusil-rustpython_01",
+  "confirmed_build": "rustpython 0.5.0 (~/.cargo/bin/rustpython)",
+  "notes": "Dominant. cleanup_thread_local_data holds LOCAL_GUARDS.borrow_mut() across .clear(); a dropped thread-local value whose __del__ re-enters _thread._local borrows LOCAL_GUARDS again -> BorrowMutError. Reproduced 3/3."
+}
