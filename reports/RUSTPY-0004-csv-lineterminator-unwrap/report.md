@@ -24,3 +24,16 @@ Replace the `unwrap()` with a fallback (`Terminator::CRLF`, which the `else` bra
 
 ## Impact
 Iterating a freshly-made `_csv.reader` (or reading `.dialect`) can abort the interpreter.
+
+## More faces (fusil-rustpython_02)
+
+The same "csv `unwrap()`s a missing dialect" pattern has other unguarded sites:
+
+- **`csv.rs:748`** — `import _csv, io; _csv.writer(io.StringIO())` panics on `*g.get("excel").unwrap()`
+  (the default `DialectItem::None` branch looks up the "excel" dialect in the global map and unwraps).
+  This is the **writer-creation** face: making a basic csv writer with no explicit dialect aborts the
+  interpreter (5 vehicles). `repro_writer_excel.py`.
+- **`csv.rs:1070`** — a reader `__next__` path (1 vehicle).
+
+Same fix class: fall back to a default or raise `_csv.Error` instead of `unwrap()`. The csv module is
+under active rework upstream (RustPython #8310), so these may be addressed there.

@@ -14,6 +14,7 @@ Dedup key = panic site (`file.rs:line`).
 | **RUSTPY-0004** | `stdlib/src/csv.rs:805` `Option::unwrap() on None` | `import _csv; _csv.reader([]).__next__()` | **7** | `get_lineterminator` does `GLOBAL_HASHMAP…get(name).unwrap()`-style access on a dialect name that isn't registered → `unwrap()` on `None`. |
 | **RUSTPY-0005** | `stdlib/_typing.rs:43` `index out of bounds` | `import _typing; _typing._idfunc()` | 2 | `_idfunc` does `args.args[0]` with **no arity check** → OOB on a no-arg call. CPython raises `TypeError`. |
 | **RUSTPY-0006** | `stdlib/builtins.rs:557/607` `PyStr contains surrogates` | `eval(chr(0xd800))` | 2 | `compile()`/`eval()` call `source.expect_str()`, which **panics** on a string containing lone surrogates. CPython raises `ValueError`/compiles. **Rare** (the panic prints mid-run). |
+| **RUSTPY-0009** | `builtins/staticmethod.rs:182` `unwrap()` on `Err` | `repro.py` — `repr(staticmethod(obj))` where `obj.__repr__` raises | 1 | `staticmethod.__repr__` calls the wrapped object's `repr()` and **`.unwrap()`s it** — a raising `__repr__` panics instead of propagating. CPython raises the inner exception. (fleet_02) |
 
 ## Segfaults (memory-unsafety — one class, ≥3 sub-causes)
 
@@ -43,3 +44,13 @@ Checked each finding against RustPython/RustPython issues+PRs — see `notes/pri
 Summary: **RUSTPY-0003 = #5210** (open) and **RUSTPY-0007a = #2796** (open umbrella) are already tracked;
 **RUSTPY-0001** is a distinct, unfixed member of the #7813/#7965 thread-teardown family; **RUSTPY-0004**
 (csv) sits in an active-rework area (#8310); **RUSTPY-0002 / 0005 / 0006 / 0008 appear unreported**.
+
+## fusil-rustpython_02 (second fleet)
+
+213 kept dirs. Mostly re-finds of RUSTPY-0001..0006 (structseq ×56, static-type ×34, _thread ×10,
+_typing ×7, csv ×6, surrogates ×1). **New: RUSTPY-0009** (staticmethod repr unwrap). **New csv faces**
+folded into RUSTPY-0004: `csv.rs:748` (`_csv.writer(io.StringIO())` → excel-dialect unwrap, 5 veh) and
+`csv.rs:1070` (1 veh). **Many more memory crashes** (42 SIGABRT + 22 SIGSEGV) — all the **RUSTPY-0007a
+recursion → native stack-overflow class** (#2796); specific native sites seen include
+`genericalias::make_parameters_from_slice` and hash/compare (fusil's cyclic/recursive object graphs slip
+past RustPython's recursion guards).
