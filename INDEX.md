@@ -15,6 +15,7 @@ Dedup key = panic site (`file.rs:line`).
 | **RUSTPY-0005** | `stdlib/_typing.rs:43` `index out of bounds` | `import _typing; _typing._idfunc()` | 2 | `_idfunc` does `args.args[0]` with **no arity check** → OOB on a no-arg call. CPython raises `TypeError`. |
 | **RUSTPY-0006** | `stdlib/builtins.rs:557/607` `PyStr contains surrogates` | `eval(chr(0xd800))` | 2 | `compile()`/`eval()` call `source.expect_str()`, which **panics** on a string containing lone surrogates. CPython raises `ValueError`/compiles. **Rare** (the panic prints mid-run). |
 | **RUSTPY-0009** | `builtins/staticmethod.rs:182` `unwrap()` on `Err` | `repro.py` — `repr(staticmethod(obj))` where `obj.__repr__` raises | 1 | `staticmethod.__repr__` calls the wrapped object's `repr()` and **`.unwrap()`s it** — a raising `__repr__` panics instead of propagating. CPython raises the inner exception. (fleet_02) |
+| **RUSTPY-0010** | `stdlib/src/binascii.rs:507` `index out of bounds` | `import binascii; binascii.b2a_qp(b'\n')` | 1 | `b2a_qp`'s newline-scan loop leaves `in_idx == 0` when the first byte is `\n`, then `buf[in_idx - 1]` underflows to `usize::MAX` (OOB). Guard needs `in_idx > 0`. CPython returns `b'\n'`. Also via `quopri.encodestring`. (fleet_03) |
 
 ## Segfaults (memory-unsafety — one class, ≥3 sub-causes)
 
@@ -54,3 +55,24 @@ folded into RUSTPY-0004: `csv.rs:748` (`_csv.writer(io.StringIO())` → excel-di
 recursion → native stack-overflow class** (#2796); specific native sites seen include
 `genericalias::make_parameters_from_slice` and hash/compare (fusil's cyclic/recursive object graphs slip
 past RustPython's recursion guards).
+
+## fusil-rustpython_03 (third fleet)
+
+93 crash dirs across 4 instances (no dedup catalog — triaged with `fusil.python.rustpython_dedup`).
+**56 panics: all known except one NEW — RUSTPY-0010** (`binascii.b2a_qp` underflow). Known-panic
+tally: RUSTPY-0002 ×30 (structseq OOB — **new module faces**: `grp.struct_group()`,
+`resource.struct_rusage()`, `posix`/`os` struct-seqs, plus `pwd`), RUSTPY-0003 ×15 (static-type
+not initialized — the hash modules `_md5`/`_sha1`/`_sha3`/`_blake2`/`_sha2` all fold here),
+RUSTPY-0005 ×3, RUSTPY-0001 ×3, RUSTPY-0004 ×2 (`csv.rs:748`+`:805`), RUSTPY-0006 ×1, RUSTPY-0009 ×1.
+
+**37 no-panic (segv/abort):** RUSTPY-0008 ×5 (`re.Match` subscript), RUSTPY-0007a recursion →
+SIGSEGV ×11 (asyncio/importlib/_pyio object graphs), a **huge-allocation abort class** ×11
+(`memory allocation of N bytes failed` → Rust `handle_alloc_error` abort on an unchecked
+allocation size from arithmetic on fuzzer values; CPython raises `MemoryError`/`OverflowError` —
+a robustness gap, uncatchable abort vs catchable exception, not yet minted), 5 fuzzer artifacts
+(SIGINT via the `signal` module), 1 SIGKILL timeout, and 4 unlabeled `session-NNN` (hang/timeout
+artifacts: `pty.open_terminal`, GC-teardown on email/json/encodings — no distinct crash).
+
+Takeaways: the dedup catalog + `--modules-file` targeting from the new tooling would collapse this
+to "RUSTPY-0010 + huge-alloc-abort class" instead of 93 raw dirs. The structseq (0002) and
+static-type (0003) bugs are confirmed to span many more modules than the original repro suggested.

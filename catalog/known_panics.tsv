@@ -9,3 +9,4 @@ RUSTPY-0005	crates/vm/src/stdlib/_typing.rs:43
 RUSTPY-0006	crates/vm/src/stdlib/builtins.rs:557
 RUSTPY-0006	crates/vm/src/stdlib/builtins.rs:607
 RUSTPY-0009	crates/vm/src/builtins/staticmethod.rs:182
+RUSTPY-0010	crates/stdlib/src/binascii.rs:507

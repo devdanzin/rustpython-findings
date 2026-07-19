@@ -1,0 +1,17 @@
+{
+  "id": "RUSTPY-0010",
+  "slug": "binascii-b2a-qp-underflow",
+  "title": "RUSTPY-0010 — binascii.b2a_qp panics with an index underflow on input starting with `\\n` (`binascii.rs:507`)",
+  "kind": "panic",
+  "signatures": [
+    "crates/stdlib/src/binascii.rs:507"
+  ],
+  "one_line_repro": "import binascii; binascii.b2a_qp(b'\\n')",
+  "repro": "repro.py",
+  "vehicles": 1,
+  "prior_art": "unreported (to confirm vs tracker)",
+  "status": "confirmed",
+  "found_in": "fusil-rustpython_03",
+  "confirmed_build": "rustpython 0.5.0 (~/.cargo/bin/rustpython)",
+  "notes": "usize underflow: b2a_qp's newline-scan loop leaves in_idx==0 when the first byte is '\\n', then `buf[in_idx - 1]` = buf[usize::MAX] (OOB). Guard needs in_idx > 0. CPython returns b'\\n'. Deterministic 5/5. Also reachable via quopri.encodestring / encodings.quopri_codec."
+}
