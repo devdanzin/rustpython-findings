@@ -16,10 +16,11 @@ inputs/behaviors the suite doesn't** — including one where RustPython *passes*
 | **RUSTPY-0001** `_thread._local` teardown re-entrancy | works | `test_threading_local` has `test_derived_cycle_dealloc` (a local subclass with a ref cycle) — adjacent, but **not** the "a stored value's `__del__` re-enters `_local` while the owning thread runs cleanup" trigger. | **no** (adjacent only) |
 | **RUSTPY-0003** "static type not initialized" | n/a — CPython has no such failure mode | It's a RustPython-internal type-init issue (tracked as #5210), not a CPython behavior; nothing in CPython's suite targets it. | **no** (RustPython-specific) |
 | **RUSTPY-0007a** recursion → native stack overflow | `RecursionError` | `test_json/test_recursion` (incl. `test_highly_nested_objects_encoding/decoding`, "doesn't segfault"), `test_richcmp`, `test_isinstance` test recursion. **But RustPython PASSES these** — it *guards* cyclic `json.dumps` (raises), deep-nested json (raises), recursive `__eq__`/`hash`/compare (`RecursionError`). The fleet's segfaults come from other, more specific object graphs. | **no** — RustPython passes the standard recursion tests; the fuzzer found triggers they don't cover. (Known *class* = #2796.) |
+| **RUSTPY-0009** `repr(staticmethod(obj))` w/ raising `__repr__` | propagates the inner exception (`ValueError`) | `test_reprlib.py:262` reprs a staticmethod — but wrapping a **normal** function (`staticmethod(C.foo)`), which RustPython reprs fine (no panic). No test does `repr(staticmethod(obj_with_raising___repr__))`, the input that triggers the `.unwrap()` panic. | **no** — the general path is tested, but not the raising-`__repr__` case that crashes. |
 
 ## Takeaways for the maintainers
 
-- **Only 2 of 8 (RUSTPY-0008, RUSTPY-0004) would be caught by running CPython's test suite as-is.** The
+- **Only 2 of 9 (RUSTPY-0008, RUSTPY-0004) would be caught by running CPython's test suite as-is.** The
   other 6 are inputs the suite doesn't exercise — wrong-arity/uninitialized-object construction, internal
   functions called directly, surrogate *source*, thread-teardown re-entrancy, a RustPython-internal
   type-init bug, and recursion object-graphs that slip past the guards RustPython already has.
