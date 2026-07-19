@@ -8,7 +8,7 @@ Dedup key = panic site (`file.rs:line`).
 
 | id | panic site | one-line reproducer | veh | what's wrong |
 |----|-----------|---------------------|-----|--------------|
-| **RUSTPY-0001** | `stdlib/_thread.rs:977` `RefCell already borrowed` | *(thread-teardown re-entrancy; vehicle + source, see report)* | **48** | `cleanup_thread_local_data` holds `LOCAL_GUARDS.borrow_mut()` across `.clear()`, which drops guards; a dropped thread-local value whose `__del__` re-enters `_thread._local` borrows `LOCAL_GUARDS` again → `BorrowMutError`. **Dominant.** |
+| **RUSTPY-0001** | `stdlib/_thread.rs:977` `RefCell already borrowed` | `repro.py` (global `_local` + a stored value whose `__del__` re-enters `_local`; **reproduced 3/3**) | **48** | `cleanup_thread_local_data` holds `LOCAL_GUARDS.borrow_mut()` across `.clear()`, which drops guards; a dropped thread-local value whose `__del__` re-enters `_thread._local` borrows `LOCAL_GUARDS` again → `BorrowMutError`. **Dominant.** |
 | **RUSTPY-0002** | `types/structseq.rs:311` `index out of bounds` | `import pwd; pwd.struct_passwd().pw_name` | **24** | A struct-sequence built with **fewer elements than its named fields** (the no-arg constructor makes an *empty* one) — the field getter does `zelf[i]` with **no bounds check**. CPython raises `TypeError` at construction. **Dominant.** |
 | **RUSTPY-0003** | `class.rs:87` `static type has not been initialized` | `import _md5; _md5.md5()` | **15** | A native type is used before its static cell is initialized; the code `unwrap_or_else(fail)` **panics** instead of raising. |
 | **RUSTPY-0004** | `stdlib/src/csv.rs:805` `Option::unwrap() on None` | `import _csv; _csv.reader([]).__next__()` | **7** | `get_lineterminator` does `GLOBAL_HASHMAP…get(name).unwrap()`-style access on a dialect name that isn't registered → `unwrap()` on `None`. |
@@ -22,8 +22,11 @@ Dedup key = panic site (`file.rs:line`).
 | sub-cause | top frame | modules | likely mechanism |
 |-----------|-----------|---------|------------------|
 | **RUSTPY-0007a** | `…::hash` / rich-compare | email, json, asyncio ×3, asyncio_tasks | **native stack overflow** — unbounded recursion hashing/comparing a deep/recursive object (fusil's recursive tricky objects); no recursion guard on the native path → SIGSEGV/SIGABRT. CPython raises `RecursionError`. |
-| **RUSTPY-0007b** | `_sre::Match … AsMapping::as_mapping` | re | subscripting an `re.Match` object (`m[...]`) segfaults in the mapping protocol impl. |
+| **RUSTPY-0008** | `_sre::Match … AsMapping::as_mapping` | re | **MINIMIZED to 3 lines, SIGSEGV 6/6** → own report. Subscripting an uninitialized `re.Match` (`type(re.match('a','a')).__new__(M)[0]`) reads garbage `regs`/`string`; the mapping subscript path lacks the init guard that `group()`/`repr` have. |
 | **RUSTPY-0007c** | `object::core::PyInner` | selectors, asyncio_queues | object-core access on a freed/invalid object (also likely recursion-adjacent). |
+
+**RUSTPY-0008** (promoted from 0007b): `import re; M=type(re.match('a','a')); M.__new__(M)[0]` → SIGSEGV,
+deterministic. See `reports/RUSTPY-0008-sre-match-uninitialized-subscript/`.
 
 ## Severity note for maintainers
 

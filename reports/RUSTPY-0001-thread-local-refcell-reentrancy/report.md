@@ -72,13 +72,44 @@ drop(guards);   // __del__ can now re-borrow LOCAL_GUARDS safely
 
 and likewise for the `push` path (don't run Python while the borrow is live).
 
-## Reproduction status
+## Reproducer
 
-The 48 fleet vehicles reproduce it under the fuzzer's threaded workload. A minimal standalone repro is
-timing-sensitive (it needs a stored value whose `__del__` re-enters `_local` at the exact moment the
-owning thread runs `cleanup_thread_local_data`); `repro_attempt.py` sets that shape up but doesn't trip it
-deterministically. The root cause is unambiguous from the source above (borrow held across a
-Python-`__del__`-running drop). Any of the `builtins-panicked` / thread-heavy vehicle dirs reproduce it.
+```python
+import _thread, threading
+
+loc = _thread._local()          # GLOBAL: survives thread exit, so the guard's weak-upgrade
+                                # succeeds during cleanup and drops the stored value THEN.
+class Bad:
+    def __del__(self):
+        try:
+            L = _thread._local() # fresh _local -> Vacant entry -> registers a new guard (push @977)
+            L.y = 1              # ...while cleanup_thread_local_data holds LOCAL_GUARDS.borrow_mut()
+        except BaseException:
+            pass
+
+def worker():
+    loc.x = Bad()               # per-thread dict entry on the GLOBAL loc, holding Bad()
+
+for _ in range(500):
+    t = threading.Thread(target=worker)
+    t.start(); t.join()
+```
+
+```
+thread '<unnamed>' panicked at crates/vm/src/stdlib/_thread.rs:977:28:
+RefCell already borrowed
+```
+
+Reproduces the exact fleet panic (`_thread.rs:977`) **3/3**. The panic is on a worker thread, so the
+process may hang afterward (the poisoned `RefCell` + dead worker) — the panic message is the finding; kill
+the process once it prints.
+
+**The key to the minimal repro** (why an obvious version doesn't trip): `LocalGuard` holds only a *weak*
+ref to `LocalData`, so a *per-thread* `_local` (created inside `worker`) is dropped — and its stored
+value's `__del__` runs — when `worker` returns, **before** `cleanup_thread_local_data`, so no borrow is
+held. Using a **global** `_local` keeps `LocalData` alive, so the guard's `upgrade()` succeeds *inside*
+`cleanup_thread_local_data`'s `borrow_mut().clear()`, running the stored value's `__del__` while the
+borrow is held → the re-entrant `_local` access hits the `push` at `:977` → `BorrowMutError`.
 
 ## Impact
 

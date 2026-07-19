@@ -14,21 +14,11 @@ CPython raises `RecursionError` (it checks `Py_EnterRecursiveCall` on these path
 - **Fix:** add a recursion-depth check (equivalent to CPython's recursion guard) on the native
   hash/compare/repr paths, converting overflow into a `RecursionError`.
 
-## 7b — `re.Match` mapping protocol segfault (`_sre`)
+## 7b — `re.Match` mapping protocol segfault → **promoted to RUSTPY-0008**
 
-gdb top frame:
-
-```
-#0 <rustpython_vm::stdlib::_sre::_sre::Match as ...AsMapping>::as_mapping::{closure}::{closure}
-#1 <descriptor::SlotFunc>::call
-...
-```
-
-Subscripting an `re.Match` object (`m[...]`) reaches the `_sre` `Match` `as_mapping` implementation and
-segfaults (bad index/group handling, or an unchecked access on the match state). Reproduces from the
-`re-sigsegv` vehicle (`source.py` → exit 139). Not yet minimized to a one-liner; the vehicle is small.
-
-- **Fix:** bounds/None-check in the `Match` mapping getitem before indexing into the group/span state.
+Minimized to a deterministic 3-line reproducer — subscripting an **uninitialized** `re.Match`
+(`type(re.match('a','a')).__new__(M)[0]`) reads garbage `regs`/`string`. Full write-up + repro in
+**`reports/RUSTPY-0008-sre-match-uninitialized-subscript/`**.
 
 ## 7c — object-core access (`object::core::PyInner`)
 
