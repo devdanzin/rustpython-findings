@@ -17,6 +17,7 @@ Dedup key = panic site (`file.rs:line`).
 | **RUSTPY-0009** | `builtins/staticmethod.rs:182` `unwrap()` on `Err` | `repro.py` — `repr(staticmethod(obj))` where `obj.__repr__` raises | 1 | `staticmethod.__repr__` calls the wrapped object's `repr()` and **`.unwrap()`s it** — a raising `__repr__` panics instead of propagating. CPython raises the inner exception. (fleet_02) |
 | **RUSTPY-0010** | `stdlib/src/binascii.rs:507` `index out of bounds` | `import binascii; binascii.b2a_qp(b'\n')` | 1 | `b2a_qp`'s newline-scan loop leaves `in_idx == 0` when the first byte is `\n`, then `buf[in_idx - 1]` underflows to `usize::MAX` (OOB). Guard needs `in_idx > 0`. CPython returns `b'\n'`. Also via `quopri.encodestring`. (fleet_03) |
 | **RUSTPY-0011** | `builtins/classmethod.rs:198` `unwrap()` on `Err` | `repro.py` — `repr(classmethod(obj))` where `obj.__repr__` raises | 1 | **Exact sibling of RUSTPY-0009**, one type over: `classmethod.__repr__` does `.repr(vm).unwrap()` — a raising `__repr__` panics instead of propagating. CPython raises the inner exception. Report both as one `.repr(vm).unwrap()` fix. (fleet_05) |
+| **RUSTPY-0017** | `_ctypes/simple.rs:908` (+ `:895/921/759/775/791/807`) `.expect("int too large…")` | `import ctypes; ctypes.c_char_p(2**64)` | 1 | **Systemic class**: every ctypes simple int/pointer type (`c_char_p`/`c_void_p`/`c_wchar_p`/`c_int`/`c_long`/…) `.to_usize()/.to_i128().expect()`s an out-of-range int → panic. CPython **masks** to the C width (`c_int(2**200)`→`0`, `c_char_p(2**64)`→`None`). One file-sweep fixes all faces. (fleet_08) |
 
 ## Segfaults (memory-unsafety — one class, ≥3 sub-causes)
 
@@ -157,3 +158,17 @@ source pattern). Early read: also appears converged; left running overnight, res
 and trending to 0). Remaining yield is in the surfaces the primary mode under-exercises — the
 `--new-uninit` (uninitialized-object / 0008 class) and `--concurrency-stress` (threading / 0001
 RefCell class) variant fleets — and in fixing/reporting the 16 findings already banked.
+
+## fusil-rustpython_08 (first pure-Python-modules fleet, NO --modules-file, ~7h)
+
+Run to change the input distribution — let fusil discover the full stdlib so pure-Python modules
+exercise the C/Rust modules through their real APIs (the CPython-crash source pattern). Result:
+**645 dirs, exactly 1 NEW panic site — RUSTPY-0017** (ctypes simple int-too-large `.expect()`,
+reached via the `c_char_p` wrapper). All other panics known (0001–0006/0009/0010/0011). No-panic:
+458 abort-oom (balloon class — this fleet predated the `_suggestions` blacklist + balloon
+suppress-regex), 52 recursion SIGSEGV (0007a), 5 re.Match (0008), 16 other.
+
+Takeaway: the pure-Python-modules approach **did** surface a new bug the native-only fleets never
+reached (ctypes via its Python wrapper), validating the input-distribution change — but at 1-in-645
+the primary generation surface is deeply converged. Next: the `--concurrency-stress` variant
+(threading / RUSTPY-0001 RefCell surface) is running.

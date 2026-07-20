@@ -1,0 +1,23 @@
+{
+  "id": "RUSTPY-0017",
+  "slug": "ctypes-simple-int-too-large-expect",
+  "title": "RUSTPY-0017 — ctypes simple int/pointer types panic on an out-of-range int (.expect(\"int too large\") in _ctypes/simple.rs)",
+  "kind": "panic",
+  "signatures": [
+    "crates/vm/src/stdlib/_ctypes/simple.rs:908",
+    "crates/vm/src/stdlib/_ctypes/simple.rs:895",
+    "crates/vm/src/stdlib/_ctypes/simple.rs:921",
+    "crates/vm/src/stdlib/_ctypes/simple.rs:759",
+    "crates/vm/src/stdlib/_ctypes/simple.rs:775",
+    "crates/vm/src/stdlib/_ctypes/simple.rs:791",
+    "crates/vm/src/stdlib/_ctypes/simple.rs:807"
+  ],
+  "one_line_repro": "import ctypes; ctypes.c_char_p(2**64)",
+  "repro": "repro.py",
+  "vehicles": 1,
+  "prior_art": "unreported",
+  "status": "confirmed",
+  "found_in": "fusil-rustpython_08 (first pure-Python-modules fleet)",
+  "confirmed_build": "rustpython 0.5.0 (heads/master:a9c2c529b)",
+  "notes": "Systemic .expect() class in _ctypes/simple.rs: c_char_p/c_void_p/c_wchar_p (to_usize().expect('int too large for pointer'), :908/895/921) and c_byte/c_short/c_int/c_long/c_longlong (to_i128().expect('int too large'), :759/775/791/807, unsigned at :767/783/799) all panic on an out-of-range int. CPython MASKS to the C width (c_int(2**200)->0, c_char_p(2**64)->None). Deterministic. Fix = mask like CPython (or raise OverflowError), never .expect(); one sweep of the file fixes the class. Found via c_char_p wrapper in a pure-Python-modules fleet (no --modules-file)."
+}
