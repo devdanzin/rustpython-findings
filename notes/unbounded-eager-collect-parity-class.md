@@ -48,12 +48,37 @@ argument sites is warranted.**
 - All bare `args: Vec<PyObjectRef>` in `set/int/bool/str/float/dict/tuple/descriptor/builtin_func/
   protocol::callable/vectorcall_*` — vararg collectors, bounded by the finite call.
 
-## Related but NOT this class: abort-vs-`MemoryError` (broad, architectural)
+## ArgIterable follow-up sweep — no new parity gaps
+
+Every `ArgIterable<T>` argument site was checked (`ulimit -v 1200MB`, RustPython 0.5.0 vs CPython
+3.14.3). The posix ones (RUSTPY-0016) are the **only** parity gaps in the set, and only because
+CPython type-checks those specific positions (`argv` must be tuple/list, `setgroups` a sequence).
+The general consumers are **not** parity gaps:
+
+- **Lazy / short-circuit** (both interpreters, constant memory): `math.fsum` / `math.prod` (hang,
+  streaming accumulate), `all` / `any` (short-circuit — `all(count())` returns `False` on the `0`).
+- **Both balloon** (abort-vs-`MemoryError`, below — CPython also collects): `str.join` /
+  `bytes.join` / `bytearray.join` (RustPython grows ~7 MiB/s building the result; CPython → `MemoryError`),
+  `math.dist` (both collect the coordinate iterables; CPython → `MemoryError`).
+
+So the eager-collect **parity-gap** class stays at the 5 findings above; the `ArgIterable` mechanism
+is not itself a new source once CPython's own type-checking is accounted for.
+
+## Related but NOT this class: abort-vs-`MemoryError` (broad, architectural — KNOWN & OPEN upstream)
 
 Every eager iterable-**consumer** balloons on an infinite iterable in **both** interpreters — but
 RustPython **aborts** (`handle_alloc_error`) where CPython raises a catchable `MemoryError`:
 `tuple`/`list`/`set`/`frozenset`/`sorted`/`"".join(...)`/`itertools.product`/`socket.sendmsg`
 buffers/`f(*count())`/`f(**{keys→count()})`. This is not a parity gap (CPython also collects); the
 one difference is uncatchable abort vs catchable `MemoryError`. The real fix is global — RustPython
-should raise `MemoryError` on allocation failure rather than abort. fusil's `--child-memory-limit-mb`
-bounds it in the fleet (turns the balloon into a fast, clean abort) but does not fix the root.
+should raise `MemoryError` on allocation failure rather than abort.
+
+**This is a KNOWN, OPEN upstream problem** — RustPython/RustPython **#3493 "MemoryError/fallible
+allocations"** and **#1779 "Handle MemoryError for list and strings"** (both open). It persists not
+because it's overlooked but because it's a pervasive architectural change: Rust's default global
+allocator aborts on OOM, so raising `MemoryError` instead requires fallible allocation
+(`try_reserve`/`try_*`) threaded through every collection and string path. So the *parity-gap* class
+above (0012–0016) is the actionable, RustPython-specific, per-site-fixable work; the broad
+abort-vs-`MemoryError` behavior is the long-running #3493/#1779 effort. fusil's
+`--child-memory-limit-mb` bounds it in the fleet (turns the balloon into a fast, clean abort) but
+does not fix the root.
