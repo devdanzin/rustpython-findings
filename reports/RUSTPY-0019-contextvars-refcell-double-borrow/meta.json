@@ -1,0 +1,19 @@
+{
+  "id": "RUSTPY-0019",
+  "slug": "contextvars-refcell-double-borrow",
+  "title": "RUSTPY-0019 \u2014 contextvars `RefCell<Hamt>` double-borrows under concurrency (`already mutably borrowed`, `contextvars.rs:82`/`:86`)",
+  "kind": "panic",
+  "signatures": [
+    "crates/stdlib/src/contextvars.rs:82",
+    "crates/stdlib/src/contextvars.rs:86",
+    "crates/stdlib/src/contextvars.rs:173"
+  ],
+  "one_line_repro": "see repro.py -- a shared contextvars.Context/ContextVar hammered by threads",
+  "repro": "repro.py",
+  "vehicles": 5,
+  "prior_art": "unreported",
+  "status": "confirmed",
+  "found_in": "fusil-rustpython_09 (--concurrency-stress)",
+  "confirmed_build": "rustpython 0.5.0 (heads/master:a9c2c529b)",
+  "notes": "The contextvars Hamt (context-variable map) is stored in a RefCell (contextvars.rs), which is !Sync. A Context/ContextVar shared across threads trips overlapping borrow() (:82, borrow_vars) / borrow_mut() (:86, borrow_vars_mut) -- 'RefCell already mutably borrowed' -- and the copy path borrow().clone() (:173) is a third face. Reproduced (worker-thread panic; hit :82 and :86 across runs). CPython's contextvars is thread-safe (runs the same workload clean). SIBLING of RUSTPY-0001 (_thread _local): both are RefCell-used-for-cross-thread-shared-state classes -- RefCell is the wrong primitive for a thread-shareable Python object. Fix = a thread-safe cell (Mutex/RwLock/atomic Hamt). Found by fusil --concurrency-stress (fleet 09), which the single-threaded fleets never hit."
+}

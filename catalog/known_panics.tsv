@@ -18,3 +18,7 @@ RUSTPY-0017	crates/vm/src/stdlib/_ctypes/simple.rs:807
 RUSTPY-0017	crates/vm/src/stdlib/_ctypes/simple.rs:895
 RUSTPY-0017	crates/vm/src/stdlib/_ctypes/simple.rs:908
 RUSTPY-0017	crates/vm/src/stdlib/_ctypes/simple.rs:921
+RUSTPY-0019	crates/stdlib/src/contextvars.rs:173
+RUSTPY-0019	crates/stdlib/src/contextvars.rs:82
+RUSTPY-0019	crates/stdlib/src/contextvars.rs:86
+RUSTPY-0020	crates/vm/src/utils.rs:61

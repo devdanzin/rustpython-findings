@@ -1,0 +1,17 @@
+{
+  "id": "RUSTPY-0020",
+  "slug": "collection-repr-empty-expect",
+  "title": "RUSTPY-0020 \u2014 `collection_repr` `.expect(\"this is not called for empty collection\")` panics when a shared collection is emptied mid-repr (`utils.rs:61`)",
+  "kind": "panic",
+  "signatures": [
+    "crates/vm/src/utils.rs:61"
+  ],
+  "one_line_repro": "see repro.py -- concurrently clear + repr() a shared set/dict",
+  "repro": "repro.py",
+  "vehicles": 1,
+  "prior_art": "unreported",
+  "status": "confirmed",
+  "found_in": "fusil-rustpython_09 (--concurrency-stress)",
+  "confirmed_build": "rustpython 0.5.0 (heads/master:a9c2c529b)",
+  "notes": "collection_repr (vm/src/utils.rs) formats a collection's items: after establishing the collection is non-empty it does `iter.next()...expect(\"this is not called for empty collection\")`. A concurrent thread clearing the shared set/dict between the non-empty check and the iteration makes next() return None -> the .expect() panics (read-while-mutate TOCTOU). Reproduced 3/3 with 4 mutator + 4 reader threads on a shared set. CPython raises RuntimeError ('Set changed size during iteration') at worst -- never crashes. Fix = handle the empty/None case instead of .expect() (fall back to the empty-collection repr). Found by fusil --concurrency-stress (fleet 09)."
+}

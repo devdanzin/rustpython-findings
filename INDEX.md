@@ -192,3 +192,23 @@ Double-checked the two non-panic buckets from fleet 08:
 So fleet 08 actually yielded **two** new findings, not one: RUSTPY-0017 (ctypes) from the panics and
 RUSTPY-0018 (`_asyncio` Debug-format segv) from the mislabeled "recursion" bucket. Lesson: the
 `rustpySEGV` bucket is worth a periodic gdb-resolve pass — panic-site dedup can't see inside it.
+
+## fusil-rustpython_09 (--concurrency-stress variant)
+
+The threading/re-entrancy surface the primary mode barely touches. **2 NEW panics in the first ~8
+minutes** — both worker-thread panics, both CPython-clean, neither reachable single-threaded:
+
+- **RUSTPY-0019** — contextvars `RefCell<Hamt>` double-borrows under concurrency (`contextvars.rs:82`
+  `borrow()` / `:86` `borrow_mut()` / `:173` copy; "RefCell already mutably borrowed"). A shared
+  `Context`/`ContextVar` hammered by threads trips overlapping borrows. **Sibling of RUSTPY-0001**
+  (`_thread._local`): both are `RefCell`-used-for-cross-thread-shared-state — the wrong primitive for
+  a thread-shareable Python object. Reproduced; CPython's contextvars is thread-safe.
+- **RUSTPY-0020** — `collection_repr` `.expect("this is not called for empty collection")`
+  (`utils.rs:61`) panics when a concurrent thread empties a shared set/dict between the non-empty
+  check and the iteration (read-while-mutate TOCTOU). Reproduced 3/3; CPython raises `RuntimeError`
+  at worst, never crashes.
+
+Confirms the thesis from the fleet-07/08 convergence: the primary generation mode is mined out, but
+the **variant surfaces are not** — `--concurrency-stress` immediately produced a distinct class
+(cross-thread `RefCell` misuse + read-while-mutate `.expect()`) the 8 prior fleets never hit. The
+`--new-uninit` variant (uninitialized-object / 0008 surface) is the other unmined one.
