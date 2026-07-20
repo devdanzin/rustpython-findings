@@ -133,3 +133,27 @@ Best reported upstream as **one class issue**. Distinct from the broad **abort-v
 class (`tuple`/`list`/`set`/`sorted`/`join`/`itertools.product`/`sendmsg`/`f(*x)` — both interpreters
 balloon, RustPython aborts uncatchably; the root fix is RustPython raising `MemoryError` on alloc
 failure). Tracker: **unreported**.
+
+## Convergence (fleets 07–08)
+
+**Fleet 07 (~14k sessions, 472 kept dirs) — 0 new panic sites.** Full re-parse with
+`rustpython_dedup`: every panic maps to a known bug (RUSTPY-0001..0006/0009/0011); no `rustpyNEW`.
+The `--modules-file` primary mode has **run dry** on the 106 native modules. **53% of kept dirs
+(249/472) are pure memory-balloon noise** with 0 new bugs: 147 `_suggestions` (RUSTPY-0012, one bug
+re-found 147×) + 102 other abort-oom (`_hashlib`/`platform`/`builtins`/`time`/`_collections`… — the
+0013–0016 + abort-vs-`MemoryError` class). The rest: 66 recursion SIGSEGV (0007a), 49 re.Match (0008).
+
+Efficiency levers adopted for later fleets: `--blacklist=_signal,_suggestions` (drops the single
+biggest waste — `_suggestions` balloons every session an infinite-iterable bomb reaches it),
+`--suppress-hit-regex 'memory allocation of [0-9]+ bytes failed'` (drops the remaining balloon/OOM
+dirs — all the known abort class), and `--child-memory-limit-mb 2048` (PR #228 — bounds the balloon
+to a ~6 s abort instead of minutes of swap thrash).
+
+**Fleet 08 (pure-Python modules, NO `--modules-file`)** — run to change the input distribution
+(pure-Python stdlib modules exercising the C/Rust modules through their real APIs, the CPython-crash
+source pattern). Early read: also appears converged; left running overnight, results TBD.
+
+**Campaign status: the primary generation mode has converged** (new panic sites now ~1 per fleet
+and trending to 0). Remaining yield is in the surfaces the primary mode under-exercises — the
+`--new-uninit` (uninitialized-object / 0008 class) and `--concurrency-stress` (threading / 0001
+RefCell class) variant fleets — and in fixing/reporting the 16 findings already banked.
