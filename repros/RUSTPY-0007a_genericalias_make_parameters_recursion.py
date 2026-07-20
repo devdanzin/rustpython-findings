@@ -6,14 +6,19 @@
 #
 # The parameter-walk recurses whenever a generic-alias arg is a raw list/tuple. Two triggers:
 #
-# (1) A SELF-REFERENTIAL list/tuple arg -> infinite recursion. NOTE: this crashes CPython too
-#     (its make_parameters is likewise unguarded on a self-referential container), so this exact
-#     input is not a RustPython-only divergence -- it is the deterministic fleet reproducer.
-import types
-
+# (1) A SELF-REFERENTIAL list/tuple arg -> infinite recursion. This is ALSO a genuine CPython
+#     crash: CPython's _Py_make_parameters (Objects/genericaliasobject.c:231) recurses on nested
+#     list/tuple args with NO Py_EnterRecursiveCall guard either, so the same input SIGSEGVs stock
+#     CPython 3.14.3 and 3.16.0a0 (release + debug). Appears unreported upstream -- a fileable
+#     CPython type-crash surfaced by the RustPython campaign. gdb (CPython debug build):
+#         #0  gc_alloc                                    Python/gc.c:2013     (guard page)
+#         #2  tuple_alloc                                 Objects/tupleobject.c:57
+#         #4  PyList_AsTuple                              Objects/listobject.c:3269
+#         #5  _Py_make_parameters                         Objects/genericaliasobject.c:192
+#         #6+ _Py_make_parameters (self, x N)             Objects/genericaliasobject.c:231  <-- unguarded
 L = []
 L.append(L)  # L = [L]
-types.GenericAlias(list, (L,)).__parameters__  # walks (L,) -> recurses on L -> SIGSEGV
+list[L].__parameters__  # == types.GenericAlias(list, (L,)).__parameters__; recurses on L -> SIGSEGV
 
 # (2) DEEP BOUNDED nesting shows the RustPython-specific weakness: RustPython overflows its
 #     native stack at ~200k depth, where CPython still returns cleanly (both only crash by ~1M).

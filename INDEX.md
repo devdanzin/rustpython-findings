@@ -280,9 +280,12 @@ Full re-triage after ~10h: **everything maps to a known class, nothing new.**
 - **83 genuine SIGSEGV**: **82 `_ios_support` = RUSTPY-0024** (gdb: libobjc `objc_getClass` via ctypes,
   the float→pointer bug) + **1 `filecmp` = a RUSTPY-0007a recursion face**, gdb-confirmed unbounded
   self-recursion in `genericalias::make_parameters_from_slice` (`genericalias.rs:329`) → stack overflow.
-  That site is now enumerated in the 0007a report (repro: `repros/RUSTPY-0007a_genericalias_*.py`;
-  RustPython overflows at ~200k tuple-nesting depth where CPython survives; a self-referential arg
-  crashes both). **This is the "apparent recursions" — it's the 0007a class, not a new bug.**
+  That site is now enumerated in the 0007a report (repro: `repros/RUSTPY-0007a_genericalias_*.py`).
+  **This is the "apparent recursions"** — the 0007a class, not a new *RustPython* bug. **But the
+  self-referential trigger (`L=[];L.append(L);list[L].__parameters__`) is a genuine, apparently-unreported
+  CPYTHON crash too** — `_Py_make_parameters` (`genericaliasobject.c:231`) recurses unguarded, SIGSEGV on
+  stock CPython 3.14.3 + 3.16.0a0 (release + debug), gdb-confirmed. A fileable CPython type-crash surfaced
+  by the RustPython campaign (deep bounded nesting crashes both too: RustPython ~200k depth, CPython ~500k).
 - **182 `sigabrt` = 100% abort-vs-MemoryError** (OOM balloons; known #3493/#1779, do not file). Zero
   stack-overflow *aborts* — the recursion class surfaces as SIGSEGV (guard page), not the Rust
   "overflowed its stack" abort, which is why it's in the segv bucket.

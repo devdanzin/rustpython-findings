@@ -22,16 +22,21 @@ self-call chain of `rustpython_vm::builtins::genericalias::make_parameters_from_
 "no attribute" error. The parameter walk recurses **unguarded** whenever a generic-alias arg is a raw
 `list`/`tuple` (the "ParamSpec args" branch). Two triggers, per `repros/RUSTPY-0007a_genericalias_make_parameters_recursion.py`:
 
-- **Self-referential** list/tuple arg (`L=[]; L.append(L); types.GenericAlias(list,(L,)).__parameters__`)
-  → infinite recursion. *This crashes CPython too* (its `make_parameters` is likewise unguarded on a
-  self-referential container), so this exact input is the deterministic fleet reproducer but **not** a
-  RustPython-only divergence.
-- **Deep bounded** nesting (`x=(T,); for _ in range(200_000): x=(x,)`) shows the RustPython-specific
-  weakness: RustPython overflows its native stack at **~200k** depth where **CPython still returns
-  cleanly** (both only crash by ~1M) — i.e. RustPython has no / a much shallower recursion guard here.
+- **Self-referential** list/tuple arg (`L=[]; L.append(L); list[L].__parameters__`) → infinite
+  recursion. **This is ALSO a genuine CPython crash** (not just RustPython): CPython's
+  `_Py_make_parameters` (`Objects/genericaliasobject.c:231`) recurses on nested list/tuple args with
+  **no `Py_EnterRecursiveCall` guard** either, so the same input SIGSEGVs stock CPython **3.14.3 and
+  3.16.0a0 (release + debug)**. gdb (CPython debug): a long self-call chain of `_Py_make_parameters`
+  overflowing the C stack, crashing in `gc_alloc`. Appears **unreported upstream** — a fileable CPython
+  type-crash surfaced *by* the RustPython campaign. So this input is not a RustPython-vs-CPython
+  divergence; it is one bug present in **both** interpreters (each lacking the recursion guard).
+- **Deep bounded** (non-cyclic) nesting also crashes both, at different thresholds — RustPython
+  overflows at **~200k** tuple-nesting depth, CPython at **~500k** — confirming neither guards this path.
 
-Same fix as the class: a recursion-depth guard on `make_parameters_from_slice`. This is one enumerated
-face of the umbrella; the hash/compare paths above are the others.
+Same fix on both sides: a recursion-depth guard on the parameter walk
+(`make_parameters_from_slice` / `_Py_make_parameters`). This is one enumerated face of the umbrella;
+the hash/compare paths above are the others. **CPython-crash repro/backtrace:
+`repros/RUSTPY-0007a_genericalias_make_parameters_recursion.py`.**
 
 ## 7b — `re.Match` mapping protocol segfault → **promoted to RUSTPY-0008**
 
