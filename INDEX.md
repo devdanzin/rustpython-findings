@@ -172,3 +172,23 @@ Takeaway: the pure-Python-modules approach **did** surface a new bug the native-
 reached (ctypes via its Python wrapper), validating the input-distribution change — but at 1-in-645
 the primary generation surface is deeply converged. Next: the `--concurrency-stress` variant
 (threading / RUSTPY-0001 RefCell surface) is running.
+
+## fleet-08 deep triage (balloons + "recursion" SIGSEGVs)
+
+Double-checked the two non-panic buckets from fleet 08:
+
+- **458 balloon (abort-oom) dirs — nothing new.** All in pure-Python stdlib modules (reprlib, wave,
+  sched, `_pylong`, namedtuple-users, …) doing huge-value collection/int/sort ops. Since pure-Python
+  runs identically on both interpreters, each balloons on CPython too (`MemoryError`) — the
+  abort-vs-`MemoryError` class (#3493/#1779), not a native parity gap. Verified on the concrete
+  triggers (`namedtuple` huge fields, `reprlib.repr` huge list, `int('9'*1e8)`): both interpreters
+  balloon/reject identically.
+- **57 "recursion SIGSEGV" — actually mostly RUSTPY-0018.** 46/57 were an **`_asyncio` cluster**
+  (`_enter_task`/`_swap_current_task`/`_register_eager_task`), not recursion. gdb pinned it: a
+  `Debug::fmt` chain from `_enter_task` crashing in `CodeObject::Debug::fmt` → **new finding
+  RUSTPY-0018** (`_asyncio.rs:2492` formats the task with Rust `{:?}` instead of `repr`). The
+  remaining ~11 are the genuine recursion (0007a) + re.Match (0008) classes.
+
+So fleet 08 actually yielded **two** new findings, not one: RUSTPY-0017 (ctypes) from the panics and
+RUSTPY-0018 (`_asyncio` Debug-format segv) from the mislabeled "recursion" bucket. Lesson: the
+`rustpySEGV` bucket is worth a periodic gdb-resolve pass — panic-site dedup can't see inside it.
