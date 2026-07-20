@@ -246,4 +246,27 @@ The other three are genuinely new:
   already executing`. Recorded with the vehicle + gdb backtrace; minimal repro not achievable.
 
 Tally: fleet 09 yielded **5 new findings** (0019, 0020, 0021, 0022, 0023). 0019 (contextvars) and 0020
-(collection_repr) dominate the kept dirs; the three above are the long tail. Catalog now 23 findings.
+(collection_repr) dominate the kept dirs; the three above are the long tail (the segv bucket below adds
+one more, 0024).
+
+### SEGV/abort bucket triage (49 dirs) → **1 more new finding (0024)**
+
+Gdb-resolving the `rustpySEGV` bucket (the pass that found 0018 in fleet 08):
+
+- **28 SIGABRT = abort-vs-`MemoryError` class** (`sched` ×12, `multiprocessing_pool` ×8, `statistics` ×3,
+  `itertools` ×3, `asyncio_tools` ×2) — all `memory allocation of N bytes failed` → Rust
+  `handle_alloc_error`→abort. KNOWN OPEN upstream (#3493/#1779), **do not file**.
+- **12 `_thread-sigint`** = the RUSTPY-0001 `_local` RefCell panic → worker hang → watchdog `SIGINT`
+  (`KeyboardInterrupt`). Not a distinct crash (= 0001). +1 `xml_sax cpu_load` watchdog kill.
+- **8 `_ios_support-sigsegv` = genuine SIGSEGV, reliable 6/6 → gdb-resolved to a new bug, RUSTPY-0024.**
+  gdb showed the fault inside the real `libobjc.so.4`'s `objc_getClass`, reached via libffi from
+  `rustpython_host_env::ctypes::call` (the stress op-mix calls `objc.objc_getClass(<hostile arg>)` on the
+  shared libobjc CDLL). Single-threaded reduction isolated the divergence: **RustPython's ctypes marshals
+  a Python `float` argument to a pointer for a no-`argtypes` foreign call and dereferences it → SIGSEGV,
+  where CPython raises `ArgumentError`** (`conv_param`'s `float → f64` branch, `_ctypes/function.rs:182`,
+  has no CPython equivalent). Portable, deterministic 6/6: `ctypes.CDLL('libc.so.6').strlen(1.5)`. Small
+  ints segfault in *both* interpreters (generic int-as-pointer) — not this bug; the float path is
+  RustPython-specific. Distinct from RUSTPY-0017 (a *panic* in ctypes type *constructors* on huge ints).
+
+**Fleet-09 total: 6 new findings** (0019, 0020, 0021, 0022, 0023, 0024). Catalog now **24 findings**. The
+`--concurrency-stress` variant remains the productive surface; `--new-uninit` is still unmined.

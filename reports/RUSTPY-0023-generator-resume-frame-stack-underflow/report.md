@@ -1,6 +1,6 @@
 # RUSTPY-0023 — concurrent generator resumption underflows the frame value stack (`tried to pop from empty stack`, frame.rs:10092 via Coro::send) [rare race, no reliable repro]
 
-**New in fusil-rustpython_09** (the `--concurrency-stress` fleet). **concurrency-triggered**. Reliability: RARE race -- vehicle reproduces 0/5 on replay; ~7 synthetic shapes did not reproduce.
+**New in fusil-rustpython_09** (the `--concurrency-stress` fleet). **concurrency-triggered**. Reliability: RARE race. **Measured baseline (campaign): the fleet vehicle reproduces `frame.rs:10092` 3/500 (~0.6%); 7 synthetic concurrent-generator shapes reproduced 0/1400 combined** (genrace/g1-g3/f1-f3, ×200 each — yield-from, try/except, multi-gen, next+throw, next+gc, next+send+close). So the crash is specific to the http.cookiejar concurrent execution, not a generic concurrent-generator-resume window, and there is no minimal synthetic reproducer.
 
 ## Reproducer
 

@@ -10,7 +10,7 @@
   ],
   "one_line_repro": "concurrent next() on a shared generator (rare); see vehicle -- no reliable minimal repro",
   "repro": "repro.py",
-  "reliability": "RARE race -- vehicle reproduces 0/5 on replay; ~7 synthetic shapes did not reproduce",
+  "reliability": "RARE race -- measured: vehicle 3/500 (~0.6%); 7 synthetic concurrent-generator shapes 0/1400 combined -> no minimal synthetic repro",
   "concurrency": true,
   "prior_art": "unreported (to confirm vs tracker)",
   "status": "confirmed-rare-race",

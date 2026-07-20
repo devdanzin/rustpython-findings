@@ -1,0 +1,19 @@
+{
+  "id": "RUSTPY-0024",
+  "slug": "ctypes-float-arg-pointer-segv",
+  "title": "RUSTPY-0024 \u2014 ctypes marshals a float argument to a pointer for a no-argtypes foreign call -> SIGSEGV (CPython raises ArgumentError) (_ctypes/function.rs:182)",
+  "kind": "segv",
+  "signatures": [],
+  "source_sites": [
+    "crates/vm/src/stdlib/_ctypes/function.rs:182"
+  ],
+  "one_line_repro": "import ctypes; ctypes.CDLL('libc.so.6').strlen(1.5)  # SIGSEGV; CPython raises ArgumentError",
+  "repro": "repro.py",
+  "reliability": "deterministic 6/6 (single-threaded, portable via libc)",
+  "concurrency": false,
+  "prior_art": "unreported (to confirm vs tracker)",
+  "status": "confirmed",
+  "found_in": "fusil-rustpython_09 (--concurrency-stress, _ios_support-sigsegv bucket, gdb-resolved)",
+  "confirmed_build": "rustpython 0.5.0 (heads/master:a9c2c529b)",
+  "notes": "RustPython's ctypes marshals a Python FLOAT argument to a foreign function that has NO argtypes set, then the no-argtypes FFI dispatch treats it as a pointer-sized value and the callee dereferences a bad address -> SIGSEGV. Root cause: crates/vm/src/stdlib/_ctypes/function.rs conv_param() (the argtypes=None conversion path, :125) has a `// 11. Python float -> f64` branch (:182-188, CArgValue::Double) that CPython has no equivalent of -- CPython's implicit conversion accepts only None/int/bytes/str/ctypes-instances/_as_parameter_ and raises ArgumentError ('Don't know how to convert parameter 1') for a float. Observed mechanism (via libobjc objc_getClass): 0.0 -> NULL (safe), 1.0 -> deref ~0x1 (segv), 3.0 -> deref ~0x3 (segv), 1e300 -> 0 (safe) -- consistent with the float value becoming a small integer pointer address. Portable, single-threaded, deterministic 6/6: `ctypes.CDLL('libc.so.6').strlen(1.5)` segfaults (strlen derefs its char* arg); `libc.atoi(2.5)` too. Fix: remove the float branch from conv_param (raise 'Don't know how to convert' like CPython) so a Double is never dispatched as a pointer. DISTINCT from RUSTPY-0017 (that is a PANIC in ctypes simple-TYPE CONSTRUCTORS on huge ints, e.g. c_char_p(2**64) .expect('int too large'); this is a SEGV in foreign-function ARG MARSHALLING on a float). NOTE: passing a small int (e.g. objc_getClass(12345)) segfaults in BOTH CPython and RustPython -- that is the generic 'int-as-pointer' behavior, NOT this bug. Found by gdb-resolving fleet-09's _ios_support-sigsegv bucket (8 dirs, reliable 6/6): the concurrency-stress op-mix called objc.objc_getClass(<hostile arg>) on the shared libobjc CDLL; single-threaded reduction isolated the float-arg divergence (no concurrency required)."
+}
