@@ -202,8 +202,9 @@ RUSTPY-0018 (`_asyncio` Debug-format segv) from the mislabeled "recursion" bucke
 
 ## fusil-rustpython_09 (--concurrency-stress variant)
 
-The threading/re-entrancy surface the primary mode barely touches. **2 NEW panics in the first ~8
-minutes** — both worker-thread panics, both CPython-clean, neither reachable single-threaded:
+The threading/re-entrancy surface the primary mode barely touches. The first two NEW panics (within ~8
+minutes) were both worker-thread, CPython-clean, concurrency-only — the full triage below adds three
+more (one of them single-threaded). The headline pair:
 
 - **RUSTPY-0019** — contextvars `RefCell<Hamt>` double-borrows under concurrency (`contextvars.rs:82`
   `borrow()` / `:86` `borrow_mut()` / `:173` copy; "RefCell already mutably borrowed"). A shared
@@ -219,3 +220,30 @@ Confirms the thesis from the fleet-07/08 convergence: the primary generation mod
 the **variant surfaces are not** — `--concurrency-stress` immediately produced a distinct class
 (cross-thread `RefCell` misuse + read-while-mutate `.expect()`) the 8 prior fleets never hit. The
 `--new-uninit` variant (uninitialized-object / 0008 surface) is the other unmined one.
+
+### Full triage (fleet still running): 18 `rustpyNEW` dirs → 5 signatures, **3 new findings**
+
+Parsing every `rustpyNEW` dir with `rustpython_dedup.parse_report` gave 5 distinct signatures. Two are
+**already-catalogued** bugs the fleet's older catalog snapshot didn't dedup (regenerate/refresh the
+snapshot to silence them): `contextvars.rs:82` ×11 = **RUSTPY-0019**, `utils.rs:61` ×3 = **RUSTPY-0020**.
+The other three are genuinely new:
+
+- **RUSTPY-0021** — `sys.breakpointhook()` panics via `warn(...).unwrap()` (`sys.rs:874`) when
+  `$PYTHONBREAKPOINT` names an unimportable module **and** warnings are escalated to errors
+  (`simplefilter('error')`): `warn()` returns `Err` → `.unwrap()` aborts. **Single-threaded**
+  (deterministic 5/5; surfaced here only because the op-mix calls `sys` funcs with warnings escalated).
+  CPython raises a *catchable* `RuntimeWarning`. Class = `.unwrap()` on a Python-reachable `PyResult`.
+- **RUSTPY-0022** — `itertools.cycle` indexes its cache **out of bounds under concurrency**
+  (`saved[index.fetch_add(1)]` races a separate non-atomic reset, `itertools.rs:282`): with a 1-element
+  cycle, two racing `fetch_add`s put index 1 into a len-1 vec → `index out of bounds` panic. Reliable
+  8/8. CPython never crashes. Read-while-advance TOCTOU, **sibling of RUSTPY-0020**.
+- **RUSTPY-0023** — concurrent generator resumption underflows the frame value stack (`tried to pop
+  from empty stack`, `frame.rs:10092` via `Coro::send`/`resume_gen_frame`). **Confirmed VM crash but a
+  RARE race** — the vehicle reproduces 0/5 on replay and ~7 synthetic shapes didn't fire; the crashing
+  generator is transient (not a shared iterator), so it's unpinned. `frame.rs:10092` is
+  `ExecutingFrame::fatal`, a **generic stack-underflow sink**, so it is deliberately **not** added to
+  `known_panics.tsv` (would over-match unrelated bugs). CPython guards with `ValueError: generator
+  already executing`. Recorded with the vehicle + gdb backtrace; minimal repro not achievable.
+
+Tally: fleet 09 yielded **5 new findings** (0019, 0020, 0021, 0022, 0023). 0019 (contextvars) and 0020
+(collection_repr) dominate the kept dirs; the three above are the long tail. Catalog now 23 findings.

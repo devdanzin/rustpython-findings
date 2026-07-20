@@ -1,0 +1,20 @@
+{
+  "id": "RUSTPY-0023",
+  "slug": "generator-resume-frame-stack-underflow",
+  "title": "RUSTPY-0023 \u2014 concurrent generator resumption underflows the frame value stack (`tried to pop from empty stack`, frame.rs:10092 via Coro::send) [rare race, no reliable repro]",
+  "kind": "panic",
+  "signatures": [],
+  "source_sites": [
+    "crates/vm/src/frame.rs:10092",
+    "crates/vm/src/coroutine.rs:110"
+  ],
+  "one_line_repro": "concurrent next() on a shared generator (rare); see vehicle -- no reliable minimal repro",
+  "repro": "repro.py",
+  "reliability": "RARE race -- vehicle reproduces 0/5 on replay; ~7 synthetic shapes did not reproduce",
+  "concurrency": true,
+  "prior_art": "unreported (to confirm vs tracker)",
+  "status": "confirmed-rare-race",
+  "found_in": "fusil-rustpython_09 (--concurrency-stress)",
+  "confirmed_build": "rustpython 0.5.0 (heads/master:a9c2c529b)",
+  "notes": "gdb backtrace (unambiguous): builtins.next -> PyIter::next -> PyGenerator::slot_iternext -> Coro::send -> resume_gen_frame -> Py<Frame>::resume -> ExecutingFrame::run -> ExecutingFrame::pop_value -> ExecutingFrame::fatal 'tried to pop from empty stack' (frame.rs:10092). A Python generator's frame value stack underflowed while being resumed under the --concurrency-stress op-mix (module http.cookiejar). Coro::run_with_context (coroutine.rs:110) guards *simultaneous* resume with a compare_exchange on `running`, but send/send_none first do a NON-atomic `running.load()` fast-path check and read `self.frame.lasti()` BEFORE the CAS (coroutine.rs:178-186 / :199-212); the crash is consistent with a resume/finalization race on the frame's non-atomic value stack that the CAS does not fully cover (candidate: gc/close finalization or torn frame state). The exact trigger is unpinned: the crashing generator is transient (created inside concurrent module calls), NOT one of the shared iterators, and the vehicle reproduces 0/5 -- a sub-1% window. SIGNATURE frame.rs:10092 is ExecutingFrame::fatal, a GENERIC stack-underflow sink many unrelated bugs funnel through, so it is deliberately NOT added to known_panics.tsv (would over-match). CPython raises 'ValueError: generator already executing' instead of crashing. Recorded as a confirmed-but-rare VM crash; reproducer is the fleet vehicle /home/fusil/runs/fusil-rustpython_09/inst-02/python/http_cookiejar-panicked-rustpyNEW/."
+}

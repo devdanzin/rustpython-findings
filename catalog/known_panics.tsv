@@ -22,3 +22,5 @@ RUSTPY-0019	crates/stdlib/src/contextvars.rs:173
 RUSTPY-0019	crates/stdlib/src/contextvars.rs:82
 RUSTPY-0019	crates/stdlib/src/contextvars.rs:86
 RUSTPY-0020	crates/vm/src/utils.rs:61
+RUSTPY-0021	crates/vm/src/stdlib/sys.rs:874
+RUSTPY-0022	crates/vm/src/stdlib/itertools.rs:282

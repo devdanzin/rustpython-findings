@@ -1,0 +1,21 @@
+{
+  "id": "RUSTPY-0021",
+  "slug": "sys-breakpointhook-warn-unwrap",
+  "title": "RUSTPY-0021 \u2014 sys.breakpointhook() panics via warn(...).unwrap() on an unimportable $PYTHONBREAKPOINT under warnings-as-error (sys.rs:874)",
+  "kind": "panic",
+  "signatures": [
+    "crates/vm/src/stdlib/sys.rs:874"
+  ],
+  "source_sites": [
+    "crates/vm/src/stdlib/sys.rs:874"
+  ],
+  "one_line_repro": "PYTHONBREAKPOINT=nonexistent.foo + warnings.simplefilter('error'); sys.breakpointhook() -> panic",
+  "repro": "repro.py",
+  "reliability": "deterministic 5/5 (single-threaded)",
+  "concurrency": false,
+  "prior_art": "unreported (to confirm vs tracker)",
+  "status": "confirmed",
+  "found_in": "fusil-rustpython_09 (--concurrency-stress)",
+  "confirmed_build": "rustpython 0.5.0 (heads/master:a9c2c529b)",
+  "notes": "sys.breakpointhook() (sys.rs:849) reads $PYTHONBREAKPOINT; when it names an unimportable module, or the attribute is missing, it calls the closure print_unimportable_module_warn, which does `warn(vm.ctx.exceptions.runtime_warning, \"Ignoring unimportable $PYTHONBREAKPOINT: ...\", 0, vm).unwrap()` (sys.rs:867-874). warn() returns a PyResult; under warnings-as-error (warnings.simplefilter('error'), or an -W error filter) the RuntimeWarning is raised as an exception, so warn() returns Err -> `.unwrap()` PANICS and aborts the interpreter. CPython instead lets the (escalated) RuntimeWarning propagate as a normal, catchable exception. Single-threaded -- concurrency is not required; it surfaced in the --concurrency-stress fleet only because that op-mix calls sys module functions while warnings were escalated. Fix: propagate warn()'s error (`warn(...)?;`) instead of `.unwrap()`. Class = RustPython `.unwrap()` on a Python-reachable PyResult. Found in fusil-rustpython_09."
+}
