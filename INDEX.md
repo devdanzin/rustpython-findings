@@ -188,6 +188,13 @@ Double-checked the two non-panic buckets from fleet 08:
   `Debug::fmt` chain from `_enter_task` crashing in `CodeObject::Debug::fmt` → **new finding
   RUSTPY-0018** (`_asyncio.rs:2492` formats the task with Rust `{:?}` instead of `repr`). The
   remaining ~11 are the genuine recursion (0007a) + re.Match (0008) classes.
+  **Update (minimal repro done):** reduced to **5 lines** — two `_asyncio._enter_task(0, f)` calls with
+  a plain `def f(): pass` (deterministic 5/5, gdb-identical to the vehicle; no hostile object needed).
+  Root cause refined and deepened: the real bug is **`PyAtomicRef<T>::Debug` is unsound**
+  (`ext.rs:272` — it `.cast::<T>()`s a pointer that is actually `*Py<T>`; every other method casts to
+  `Py<T>`), so `{:?}` on any `PyFunction` (`code: PyAtomicRef<PyCode>`) reads a misaligned `CodeObject`
+  and derefs garbage → SIGSEGV. Builtin control (`len`, no `PyCode`) doesn't crash. Two-layer fix:
+  `.cast::<T>()`→`.cast::<Py<T>>()` (kills the class) **and** `_asyncio` should use `task.repr(vm)?`.
 
 So fleet 08 actually yielded **two** new findings, not one: RUSTPY-0017 (ctypes) from the panics and
 RUSTPY-0018 (`_asyncio` Debug-format segv) from the mislabeled "recursion" bucket. Lesson: the

@@ -1,15 +1,21 @@
 {
   "id": "RUSTPY-0018",
   "slug": "asyncio-enter-task-debug-format-segv",
-  "title": "RUSTPY-0018 — _asyncio._enter_task formats the task with Rust {:?} Debug -> garbage error messages + SIGSEGV on a hostile task (_asyncio.rs:2492)",
+  "title": "RUSTPY-0018 — PyAtomicRef<T> Debug is unsound (casts Py<T> as T); _asyncio._enter_task's {:?} error message reaches it and SIGSEGVs on any Python-function task (ext.rs:272 via _asyncio.rs:2492)",
   "kind": "segv",
   "signatures": [],
-  "one_line_repro": "import _asyncio, asyncio; loop=asyncio.new_event_loop(); c=lambda:loop.create_task((lambda:(yield))()); import sys; # see repro.py",
+  "source_sites": [
+    "crates/vm/src/object/ext.rs:272",
+    "crates/stdlib/src/_asyncio.rs:2492",
+    "crates/compiler-core/src/bytecode.rs:1308"
+  ],
+  "one_line_repro": "import _asyncio\\ndef f(): pass\\n_asyncio._enter_task(0, f)\\n_asyncio._enter_task(0, f)  # SIGSEGV",
   "repro": "repro.py",
   "vehicles": 46,
   "prior_art": "unreported (to confirm vs tracker)",
   "status": "confirmed",
+  "minimal_repro": true,
   "found_in": "fusil-rustpython_08 (first pure-Python-modules fleet)",
   "confirmed_build": "rustpython 0.5.0 (heads/master:a9c2c529b)",
-  "notes": "_enter_task's 'Cannot enter into task {:?} while another task {:?} is being executed' (_asyncio.rs:2492) formats the tasks with Rust {:?} Debug instead of Python repr. Two faces: (1) garbage message -- dumps the whole internal Rust struct (Mutex/RwLock/CodeObject/ContextInner...); (2) SIGSEGV in CodeObject::Debug::fmt when the entered task wraps a hostile object (gdb-confirmed via _enter_task; fleet vehicle 2/2). NOT recursion (0007a) -- linear Debug::fmt chain. Was the bulk (46/57) of fleet-08's 'recursion SIGSEGV' bucket. Fix = task.repr(vm)? not {:?}; audit _swap_current_task/_leave_task/_register* + grep _asyncio.rs for format!(...{:?}..., <pyobject>). CPython uses %R. Minimal SIGSEGV repro pending (stateful, like 0001); root-cause repro (the Debug dump) is in repro.py."
+  "notes": "MINIMAL SIGSEGV REPRO DONE (5 lines, deterministic 5/5, gdb-confirmed identical to vehicle; a plain function suffices -- no hostile object). Two bugs: (1) DEEPER/ROOT -- PyAtomicRef<T>::Debug (ext.rs:272) is unsound: it .cast::<T>()s a pointer that actually points at Py<T> (every other method -- Deref :301, load_raw :324, From :288, swap :331 -- casts to Py<T>), skipping the object header and reading misaligned fields. PyFunction.code is PyAtomicRef<PyCode>, so {:?} on a function reaches CodeObject::Debug (bytecode.rs:1308) which derefs garbage obj_name/source_path heap pointers -> SIGSEGV. Fix = one char: .cast::<T>() -> .cast::<Py<T>>() (Py<T>: Debug at core.rs:2261). (2) TRIGGER -- _asyncio._enter_task (_asyncio.rs:2492) formats the tasks with {:?} (Debug) not Python repr in its 'Cannot enter' RuntimeError; wrong even without the crash (dumps the internal Rust struct). Fix = task.repr(vm)?. Builtin control (len, no PyCode) does NOT crash -> isolates the PyCode path. Other {:?}-of-pyobject sites that can independently hit bug 1: typevar.rs:933/:996, os.rs:946/:1069. Was 46/57 of fleet-08's mislabeled 'recursion SIGSEGV' bucket. Distinct from 0007a (linear Debug chain, not self-recursion). CPython uses %R (repr)."
 }

@@ -1,84 +1,113 @@
-# RUSTPY-0018 — `_asyncio._enter_task` formats the task with Rust `{:?}` Debug in its error message → garbage messages + SIGSEGV on a hostile task (`_asyncio.rs:2492`)
+# RUSTPY-0018 — `PyAtomicRef<T>`'s `Debug` is unsound (type-confuses `Py<T>` as `T`); `_asyncio._enter_task`'s `{:?}` error message reaches it and SIGSEGVs on any Python-function task (`ext.rs:272` via `_asyncio.rs:2492`)
 
 **New in fusil-rustpython_08** — found hiding in the "recursion SIGSEGV" bucket (46 of 57 segv dirs
-were actually an `_asyncio` cluster, not recursion). When `_enter_task(loop, task)` is called while
-another task is already current, the "cannot enter" `RuntimeError` formats **both tasks with Rust's
-`{:?}` (Debug)** instead of the Python `repr()`. Two consequences:
+were actually an `_asyncio` cluster, not recursion). **Minimal SIGSEGV repro achieved (5 lines,
+deterministic 5/5, gdb-confirmed identical to the vehicle).** A plain Python function is enough — no
+hostile object needed. Two distinct bugs are in play; the second is the deeper root cause.
 
-1. **Garbage error messages** — `{:?}` on a `PyObjectRef` recursively dumps the whole internal Rust
-   struct (`PyStr { value: …, kind: Ascii, hash: … }`, `Mutex`, `RwLock`, `AtomicCell`,
-   `CodeObject { … }`, `ContextInner { … }`, …) rather than the Python `<Task …>` repr CPython emits.
-2. **SIGSEGV** — when the entered task wraps a hostile/unusual object, formatting its code object
-   crashes: the fuzzer vehicle segfaults **2/2**, with gdb showing the fault inside
-   `CodeObject::Debug::fmt` reached from `_enter_task`.
-
-## Reproducer (root cause — the Rust-Debug dump)
+## Minimal reproducer (SIGSEGV)
 
 ```python
-import _asyncio, asyncio
-loop = asyncio.new_event_loop()
-async def coro(): pass
-t1 = loop.create_task(coro())
-t2 = loop.create_task(coro())
-_asyncio._enter_task(loop, t1)
-_asyncio._enter_task(loop, t2)   # RuntimeError -- but the message is a Rust struct dump
+import _asyncio
+
+
+def f():
+    pass
+
+
+_asyncio._enter_task(0, f)   # asyncio_running_task is None -> set to Some(f), returns
+_asyncio._enter_task(0, f)   # now Some -> "Cannot enter" formats f with {:?} -> SIGSEGV
 ```
 
-RustPython raises a `RuntimeError` whose message is a multi-KB dump of `t1`'s internal Rust
-representation (`… Mutex { data: PyStr { value: "coro", kind: Ascii, hash: … } }, … CodeObject { … },
-task_context: RwLock { data: Some([PyObject PyContext { inner: ContextInner { idx: Cell { value:
-18446744073709551615 }, … } }]) }, … ] is being executed.`). CPython:
-`RuntimeError: Cannot enter into task <Task pending name='Task-2' …> while another task <Task
-pending name='Task-1' …> is being executed.` (Python `repr`, bounded).
+`_enter_task(loop, task)` checks the per-VM `vm.asyncio_running_task` (`_asyncio.rs:2489`): the first
+call sets it to `Some(f)`; the **second** call finds it non-`None` and builds the "Cannot enter into
+task {:?} while another task {:?}" `RuntimeError` (`_asyncio.rs:2492`), formatting both tasks with Rust
+`{:?}` (Debug). `f` is a `PyFunction`; formatting it walks into its `code` field and crashes (below).
+`def`, `lambda`, and plain methods all trigger it; a **builtin** (`len`, which has no `PyCode`) does
+**not** — it prints the `RuntimeError` — which isolates the crash to the `PyAtomicRef<PyCode>` path.
 
-The **SIGSEGV** face needs a hostile entered task (stateful, like RUSTPY-0001); it is reproduced by
-the fleet vehicle `inst-01/python/_asyncio-sigsegv-rustpySEGV/source.py` (2/2), gdb backtrace below.
-A minimal segfault trigger is still being reduced.
+CPython: `RuntimeError: Cannot enter into task <Task pending name='Task-2' ...> while another task
+<Task pending ...> is being executed.` — Python `repr` (`%R`), bounded and safe.
 
-## gdb backtrace (the segfault)
+## Root cause — two bugs
 
+### Bug 1 (deeper, general): `PyAtomicRef<T>::Debug` is unsound — `ext.rs:272`
+
+```rust
+impl<T: fmt::Debug> fmt::Debug for PyAtomicRef<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "PyAtomicRef(")?;
+        unsafe {
+            self.inner.load(Ordering::Relaxed)
+                .cast::<T>()          // <-- BUG: stored pointer is *Py<T>, not *T
+                .as_ref().fmt(f)
+        }?;
+        write!(f, ")")
+    }
+}
 ```
-#0  <CodeObject<…> as core::fmt::Debug>::fmt
-#1  core::fmt::write
-#2  <&&PyCode as core::fmt::Debug>::fmt
-#3  <PyAtomicRef<PyCode> as core::fmt::Debug>::fmt
-#5  <PyFunction as core::fmt::Debug>::fmt
-#10 rustpython_stdlib::_asyncio::_asyncio::_enter_task
-```
 
-## Root cause & fix
+`PyAtomicRef<T>::inner` stores a pointer to a **`Py<T>`** (the full object, header + payload) — set via
+`PyRef::leak(pyref) as *const Py<T>` in `From` (`ext.rs:288`), and read back as `Py<T>` by **every
+other** method: `Deref` (`.cast::<Py<T>>()`, `:301`), `load_raw` (`:324`), `swap` (`:331`). The `Debug`
+impl is the lone outlier: it `.cast::<T>()`s, reinterpreting the `Py<T>` as a bare payload `T` and
+skipping the object header. It then formats the misaligned bytes.
 
-`crates/stdlib/src/_asyncio.rs`, `_enter_task`:
+For `PyFunction`, `code: PyAtomicRef<PyCode>`. `CodeObject::Debug` (`bytecode.rs:1308`) reads
+`self.obj_name` and `self.source_path` — heap pointers. Under the type confusion those "pointers" are
+object-header bytes (refcount/typeid), so dereferencing them **segfaults**. It fires for *any* Python
+function, deterministically.
+
+**Fix (one char):** `.cast::<T>()` → `.cast::<Py<T>>()` (`Py<T>: Debug` exists at `core.rs:2261`), so
+`Debug` matches `Deref`/`load_raw`/`swap`. That removes the whole class of segfaults reachable by
+`{:?}`-formatting *any* object holding a `PyAtomicRef` whose payload has a pointer-chasing `Debug`.
+
+Other `{:?}`-of-PyObject sites that can independently reach this same unsoundness (audit alongside):
+`typevar.rs:933`/`:996` (`format!("{:?}...", zelf.__origin__)`), `os.rs:946`/`:1069`
+(`{:?}` on `zelf.as_object()`).
+
+### Bug 2 (the trigger): `_asyncio._enter_task` uses `{:?}` for a user-facing message — `_asyncio.rs:2492`
 
 ```rust
 return Err(vm.new_runtime_error(format!(
     "Cannot enter into task {:?} while another task {:?} is being executed.",   // :2492
-    task, current_task,
+    task, running_task.as_ref().unwrap(),
 )));
 ```
 
-`{:?}` is the Rust `Debug` impl for a Python object — it walks the object's entire internal Rust
-structure (never intended for user-facing output), which is both wrong (garbage message) and unsafe
-(the `CodeObject`/`PyFunction` Debug path segfaults on some objects). CPython formats the tasks with
-`%R` (Python `repr`). Fix: use the Python repr, e.g.
+`{:?}` on a Python object is wrong even when it doesn't crash: it dumps the object's entire internal
+Rust struct (`PyStr { value: …, kind: Ascii, hash: … }`, `Mutex`, `RwLock`, `CodeObject { … }`,
+`ContextInner { … }`) instead of the Python `<Task …>` repr. CPython formats with `%R`.
 
-```rust
-task.repr(vm)?  // and current_task.repr(vm)?  -- bounded, safe, matches CPython
+**Fix:** use the Python repr — `task.repr(vm)?` / `current_task.repr(vm)?` (bounded, safe, matches
+CPython). Audit the sibling task paths that appeared in the fuzzer's crashing sequence
+(`_swap_current_task`, `_leave_task`, `_register*`/`_unregister*`) and grep `_asyncio.rs` for
+`format!(…{:?}…, <pyobject>)`.
+
+Fixing Bug 2 removes *this* crash trigger and the garbage message; fixing Bug 1 removes the underlying
+memory-unsafety for every `{:?}` path. Both are worth doing.
+
+## gdb backtrace (minimal repro — identical to the fleet vehicle)
+
 ```
-
-Audit the other `_asyncio` task-management error paths (`_swap_current_task`, `_leave_task`,
-`_register*`/`_unregister*` — all appeared in the fuzzer's crashing sequence) for the same `{:?}`
-anti-pattern, and more broadly grep `_asyncio.rs` (and other stdlib) for `format!(…{:?}…, <pyobject>)`.
+#0  <CodeObject<Literal> as core::fmt::Debug>::fmt          bytecode.rs:1308
+#1  core::fmt::write
+#2  <&&PyCode as core::fmt::Debug>::fmt
+#3  <PyAtomicRef<PyCode> as core::fmt::Debug>::fmt          ext.rs:272   <-- the type confusion
+#5  <PyFunction as core::fmt::Debug>::fmt                   function.rs (derive)
+#7  rustpython_vm::object::core::debug_obj::<PyFunction>
+#10 rustpython_stdlib::_asyncio::_asyncio::_enter_task      _asyncio.rs:2492
+```
 
 ## Impact
 
-Any `_asyncio` "cannot enter into task" error (reachable from real asyncio misuse, not just the
-low-level `_enter_task`) emits an internal-struct dump instead of a Python message, and can segfault
-the interpreter when the task wraps an object whose Rust `Debug` misbehaves — a memory-unsafety
-crash, not a clean error.
+Any `_asyncio` "cannot enter into task" error (reachable from real asyncio misuse, not just low-level
+`_enter_task`) emits an internal-struct dump instead of a Python message, and **segfaults the
+interpreter whenever a task is an ordinary Python function** — a memory-unsafety crash from a plain,
+non-hostile input. The underlying `PyAtomicRef<T>::Debug` unsoundness is broader than `_asyncio`.
 
 ## Prior art
 
-_To check vs the RustPython tracker (`_asyncio` `_enter_task` / Debug-format / task error)._ Appears
-unreported. Distinct from the recursion→stack-overflow class (RUSTPY-0007a): gdb shows a linear
-`Debug::fmt` chain from `_enter_task`, not unbounded self-recursion.
+_To check vs the RustPython tracker (`_asyncio` `_enter_task` / `PyAtomicRef` Debug / `{:?}` in error
+messages)._ Appears unreported. Distinct from the recursion→stack-overflow class (RUSTPY-0007a): gdb
+shows a short linear `Debug::fmt` chain from `_enter_task`, not unbounded self-recursion.

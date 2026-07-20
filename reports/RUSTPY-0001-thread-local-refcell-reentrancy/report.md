@@ -104,6 +104,18 @@ Reproduces the exact fleet panic (`_thread.rs:977`) **3/3**. The panic is on a w
 process may hang afterward (the poisoned `RefCell` + dead worker) — the panic message is the finding; kill
 the process once it prints.
 
+## No SIGSEGV face — this is a *caught* invariant violation, by design
+
+This finding is a Rust **panic** (`BorrowMutError`), not a segfault, and it cannot be turned into one via
+this path. `RefCell`'s runtime borrow check is exactly what *catches* the re-entrant aliasing and panics
+**instead of** allowing the use-after-free/aliasing that would be memory-unsafe — so the "bad" outcome is
+a controlled panic, never a SIGSEGV. The neighboring `PyMutex` (`local_data.data.lock()` in
+`LocalGuard::drop`) likewise converts same-thread re-entry into a deadlock/hang, not UB. Every `_thread`
+crash the fleets kept is a fuzzer-kill artifact (`sigint` / `cpu_load`→`sigabrt` from the watchdog), not a
+genuine segv. So the minimal repro above (the panic) *is* the complete reproducer for this bug; there is
+no separate segv to reduce. (Contrast RUSTPY-0018, whose segfault comes from an `unsafe` `Debug` impl that
+bypasses exactly this kind of check.)
+
 **The key to the minimal repro** (why an obvious version doesn't trip): `LocalGuard` holds only a *weak*
 ref to `LocalData`, so a *per-thread* `_local` (created inside `worker`) is dropped — and its stored
 value's `__del__` runs — when `worker` returns, **before** `cleanup_thread_local_data`, so no borrow is
