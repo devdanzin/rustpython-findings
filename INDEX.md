@@ -111,3 +111,25 @@ a single direct call does it. This is a **distinct memory class**: not the recur
 panic line). Root: `candidates: Vec<PyObjectRef>` (`suggestions.rs:11`) — the `: Vec<PyObjectRef>`
 eager-collect-untrusted-iterable pattern recurs at ~60 sites and is worth an audit. Fix = take
 `PyListRef` (CPython parity + bounded).
+
+## Eager-collect class audit (fleet-07 follow-up)
+
+The RUSTPY-0012 balloon is **systemic**, not a one-off. An audit of the RustPython-reachable
+"collect an argument's iterable whole with no length/type check" sites (`Vec<PyObjectRef>`,
+`ArgIterable<T>`, …) found **5 confirmed parity-gap instances** across 5 subsystems — RustPython
+balloons to an OOM abort where CPython rejects the input in O(1):
+
+- **RUSTPY-0012** `_suggestions._generate_suggestions` (candidates) — `TypeError: candidates must be a list`
+- **RUSTPY-0013** `lzma` `filters=` — `TypeError: object of type 'generator' has no len()`
+- **RUSTPY-0014** `ExceptionGroup`/`BaseExceptionGroup` (exceptions) — `TypeError: … must be a sequence`
+- **RUSTPY-0015** `_ctypes` Array slice-assign + `argtypes` (collected at call time)
+- **RUSTPY-0016** `posix` `posix_spawn` argv/setsigdef/setsigmask + `setgroups` (all `ArgIterable<T>`)
+
+Full pattern, per-site repros, the SAFE sites (type() bases, ctypes `_fields_`, zip/map, execv argv,
+all the `*args` varargs), the `ArgIterable` follow-up, and the shared fix (require a concrete
+container / validate before collecting) are in
+[`notes/unbounded-eager-collect-parity-class.md`](notes/unbounded-eager-collect-parity-class.md).
+Best reported upstream as **one class issue**. Distinct from the broad **abort-vs-`MemoryError`**
+class (`tuple`/`list`/`set`/`sorted`/`join`/`itertools.product`/`sendmsg`/`f(*x)` — both interpreters
+balloon, RustPython aborts uncatchably; the root fix is RustPython raising `MemoryError` on alloc
+failure). Tracker: **unreported**.

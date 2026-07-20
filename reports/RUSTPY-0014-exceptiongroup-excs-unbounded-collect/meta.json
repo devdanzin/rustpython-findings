@@ -1,0 +1,16 @@
+{
+  "id": "RUSTPY-0014",
+  "slug": "exceptiongroup-excs-unbounded-collect",
+  "title": "RUSTPY-0014 \u2014 ExceptionGroup(msg, excs) eager-collects any iterable (CPython requires a sequence) -> unbounded memory / OOM abort",
+  "kind": "abort",
+  "signatures": [],
+  "one_line_repro": "import itertools; ExceptionGroup('m', itertools.count())",
+  "repro": "repro.py",
+  "vehicles": 1,
+  "prior_art": "unreported (eager-collect class; report with RUSTPY-0012)",
+  "status": "confirmed",
+  "found_in": "fusil-rustpython_07 (eager-collect audit)",
+  "confirmed_build": "rustpython 0.5.0 (heads/master:a9c2c529b)",
+  "class_note": "notes/unbounded-eager-collect-parity-class.md",
+  "notes": "The (Base)ExceptionGroup Constructor eager-collects the excs argument (Vec<PyObjectRef>, helper derive_and_copy_attributes at :448); an infinite iterable balloons ~1.1 GiB/s to OOM abort (measured 5.6 GiB in 5s). CPython requires a sequence. Fix = require a list/tuple/sized sequence. Instance of the eager-collect class."
+}

@@ -1,0 +1,16 @@
+{
+  "id": "RUSTPY-0015",
+  "slug": "ctypes-eager-collect",
+  "title": "RUSTPY-0015 \u2014 _ctypes Array slice-assign / argtypes eager-collect any iterable (CPython bounds/rejects) -> unbounded memory / OOM abort",
+  "kind": "abort",
+  "signatures": [],
+  "one_line_repro": "import ctypes, itertools; a=(ctypes.c_int*3)(); a[0:3]=itertools.count()",
+  "repro": "repro.py",
+  "vehicles": 1,
+  "prior_art": "unreported (eager-collect class; report with RUSTPY-0012)",
+  "status": "confirmed",
+  "found_in": "fusil-rustpython_07 (eager-collect audit)",
+  "confirmed_build": "rustpython 0.5.0 (heads/master:a9c2c529b)",
+  "class_note": "notes/unbounded-eager-collect-parity-class.md",
+  "notes": "Two faces: (1) Array.__setitem__ slice-assign collects the RHS iterable via extract_elements_with BEFORE the same-size length check (array.rs:977) -> infinite RHS balloons; CPython raises ValueError first. (2) argtypes is collected at call/callback-build time (function.rs:1012/1944), not at attribute-set, so f.argtypes=count(); f(None) balloons. Fix = length/type-check before collecting. Instance of the eager-collect class."
+}

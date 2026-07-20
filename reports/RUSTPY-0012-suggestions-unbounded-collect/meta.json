@@ -1,7 +1,7 @@
 {
   "id": "RUSTPY-0012",
   "slug": "suggestions-unbounded-collect",
-  "title": "RUSTPY-0012 — _suggestions._generate_suggestions eagerly collects any iterable (CPython requires a list) -> unbounded memory / OOM abort",
+  "title": "RUSTPY-0012 \u2014 _suggestions._generate_suggestions eagerly collects any iterable (CPython requires a list) -> unbounded memory / OOM abort",
   "kind": "abort",
   "signatures": [],
   "one_line_repro": "import _suggestions, itertools; _suggestions._generate_suggestions(itertools.count(), 'x')",
@@ -11,5 +11,6 @@
   "status": "confirmed",
   "found_in": "fusil-rustpython_07",
   "confirmed_build": "rustpython 0.5.0 (~/.cargo/bin/rustpython)",
-  "notes": "candidates: Vec<PyObjectRef> (suggestions.rs:11) eager-collects any iterable with no length/type check; CPython does PyList_Check -> TypeError('candidates must be a list'). Infinite iterator (itertools.count) or non-terminating __getitem__ object -> unbounded Vec -> OOM abort (~1 GiB/s, measured 5.5 GiB in 5s), no concurrency needed. Distinct from the single-huge-alloc abort + the runaway-thread balloon (fixed by fusil --child-memory-limit-mb). No panic line -> surfaces as rustpySEGV / 'memory allocation of N bytes failed'. Fix = take PyListRef. Broader class: ~60 `: Vec<PyObjectRef>` sites, a subset are pyfunction args eager-collecting untrusted iterables (e.g. lzma filter_specs) -- audit."
+  "notes": "EXEMPLAR of the unbounded-eager-collect class (see class_note). candidates: Vec<PyObjectRef> (suggestions.rs:11) eager-collects any iterable with no length/type check; CPython does PyList_Check -> TypeError('candidates must be a list'). Infinite iterator (itertools.count) or non-terminating __getitem__ object -> unbounded Vec -> OOM abort (~1 GiB/s, measured 5.5 GiB in 5s), no concurrency needed. Distinct from the single-huge-alloc abort + the runaway-thread balloon (fixed by fusil --child-memory-limit-mb). No panic line -> surfaces as rustpySEGV / 'memory allocation of N bytes failed'. Fix = take PyListRef. Broader class: ~60 `: Vec<PyObjectRef>` sites, a subset are pyfunction args eager-collecting untrusted iterables (e.g. lzma filter_specs) -- audit. Audit (fleet-07) found 4 sibling instances: RUSTPY-0013 (lzma), 0014 (ExceptionGroup), 0015 (_ctypes), 0016 (posix ArgIterable).",
+  "class_note": "notes/unbounded-eager-collect-parity-class.md"
 }
