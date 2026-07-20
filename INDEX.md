@@ -270,3 +270,23 @@ Gdb-resolving the `rustpySEGV` bucket (the pass that found 0018 in fleet 08):
 
 **Fleet-09 total: 6 new findings** (0019, 0020, 0021, 0022, 0023, 0024). Catalog now **24 findings**. The
 `--concurrency-stress` variant remains the productive surface; `--new-uninit` is still unmined.
+
+### fleet-09 CONVERGED (~10h, ~2400 kept dirs) — no new bug beyond the six
+
+Full re-triage after ~10h: **everything maps to a known class, nothing new.**
+- **188 `rustpyNEW` panics** = the five already-catalogued sites only (contextvars.rs:82 ×125 = 0019,
+  utils.rs:61 ×29 = 0020, sys.rs:874 ×27 = 0021, itertools.rs:282 ×4 = 0022, frame.rs:10092 ×3 = 0023);
+  flagged NEW only because the fleet ran a **stale catalog snapshot** (regenerate to silence).
+- **83 genuine SIGSEGV**: **82 `_ios_support` = RUSTPY-0024** (gdb: libobjc `objc_getClass` via ctypes,
+  the float→pointer bug) + **1 `filecmp` = a RUSTPY-0007a recursion face**, gdb-confirmed unbounded
+  self-recursion in `genericalias::make_parameters_from_slice` (`genericalias.rs:329`) → stack overflow.
+  That site is now enumerated in the 0007a report (repro: `repros/RUSTPY-0007a_genericalias_*.py`;
+  RustPython overflows at ~200k tuple-nesting depth where CPython survives; a self-referential arg
+  crashes both). **This is the "apparent recursions" — it's the 0007a class, not a new bug.**
+- **182 `sigabrt` = 100% abort-vs-MemoryError** (OOM balloons; known #3493/#1779, do not file). Zero
+  stack-overflow *aborts* — the recursion class surfaces as SIGSEGV (guard page), not the Rust
+  "overflowed its stack" abort, which is why it's in the segv bucket.
+- **78 `sigint` + 9 `cpu_load`** = watchdog kills (the RUSTPY-0001 `_thread._local` hang → SIGINT).
+- Known re-finds: RUSTPY-0002/0003/0004 panics (catalog-labelled).
+
+So fleet-09's yield is closed at **0019–0024**. Next surface = the unmined `--new-uninit` variant.

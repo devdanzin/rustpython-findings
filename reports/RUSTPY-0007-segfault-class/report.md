@@ -14,6 +14,25 @@ CPython raises `RecursionError` (it checks `Py_EnterRecursiveCall` on these path
 - **Fix:** add a recursion-depth check (equivalent to CPython's recursion guard) on the native
   hash/compare/repr paths, converting overflow into a `RecursionError`.
 
+### Enumerated concrete site: `genericalias::make_parameters_from_slice`
+
+Confirmed in **fusil-rustpython_09** (the `filecmp` SIGSEGV vehicle, reproduces 3/3). gdb shows a long
+self-call chain of `rustpython_vm::builtins::genericalias::make_parameters_from_slice`
+(`crates/vm/src/builtins/genericalias.rs:329`) crashing at the guard page while building a
+"no attribute" error. The parameter walk recurses **unguarded** whenever a generic-alias arg is a raw
+`list`/`tuple` (the "ParamSpec args" branch). Two triggers, per `repros/RUSTPY-0007a_genericalias_make_parameters_recursion.py`:
+
+- **Self-referential** list/tuple arg (`L=[]; L.append(L); types.GenericAlias(list,(L,)).__parameters__`)
+  → infinite recursion. *This crashes CPython too* (its `make_parameters` is likewise unguarded on a
+  self-referential container), so this exact input is the deterministic fleet reproducer but **not** a
+  RustPython-only divergence.
+- **Deep bounded** nesting (`x=(T,); for _ in range(200_000): x=(x,)`) shows the RustPython-specific
+  weakness: RustPython overflows its native stack at **~200k** depth where **CPython still returns
+  cleanly** (both only crash by ~1M) — i.e. RustPython has no / a much shallower recursion guard here.
+
+Same fix as the class: a recursion-depth guard on `make_parameters_from_slice`. This is one enumerated
+face of the umbrella; the hash/compare paths above are the others.
+
 ## 7b — `re.Match` mapping protocol segfault → **promoted to RUSTPY-0008**
 
 Minimized to a deterministic 3-line reproducer — subscripting an **uninitialized** `re.Match`
